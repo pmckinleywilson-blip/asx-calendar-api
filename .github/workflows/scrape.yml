@@ -1,0 +1,66 @@
+name: ASX Event Detection Pipeline
+
+on:
+  # Twice daily: 7am and 7pm AEST (UTC+10 → 21:00 and 09:00 UTC)
+  schedule:
+    - cron: '17 21 * * *'   # 7:17am AEST daily
+    - cron: '17 9 * * *'    # 7:17pm AEST daily
+
+  # Manual trigger for testing
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: 'Company tier to scan (asx100, asx101-300, asx301-500, or auto)'
+        required: false
+        default: 'auto'
+
+jobs:
+  detect-and-notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run event detection pipeline
+        run: node scripts/pipeline.js
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          INVITE_FROM_EMAIL: ${{ secrets.INVITE_FROM_EMAIL }}
+
+  # Weekly company data refresh (Sunday 8pm AEST)
+  update-companies:
+    runs-on: ubuntu-latest
+    if: github.event.schedule == '17 21 * * *' && github.event_name == 'schedule'
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Update company data
+        run: node scripts/update-companies.js
+
+      - name: Commit updated company data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/data/asx-companies.csv
+          git diff --staged --quiet || git commit -m "chore: update ASX company data [automated]"
+          git push

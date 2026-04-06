@@ -8,7 +8,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ASX WIRE | Free ASX Events Calendar for AI Agents & Analysts",
+  title: "ASX CALENDAR | Free ASX Events Calendar for AI Agents & Analysts",
   description:
     "Free, machine-readable ASX corporate events calendar sourced from announcements and IR pages. All ASX-listed companies with webcast links, dial-in numbers, and direct calendar invites.",
   keywords:
@@ -30,7 +30,7 @@ export default function RootLayout({
               href="/"
               className="text-xs font-medium tracking-[2px] text-[#1b1b1b] no-underline"
             >
-              ASX WIRE
+              ASX CALENDAR
             </a>
             <nav className="flex items-center gap-4 text-[10px] c-muted">
               <a href="/subscribe" className="hover:text-[#1b1b1b]">

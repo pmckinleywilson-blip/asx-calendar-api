@@ -246,7 +246,7 @@ export default function Home() {
           __html: JSON.stringify({
             "@context": "https://schema.org",
             "@type": "WebSite",
-            name: "ASX Wire",
+            name: "ASX Calendar",
             url: "https://asx-calendar-api.vercel.app",
             description:
               "Free ASX events calendar with webcast links and calendar invites for all ASX-listed companies",

@@ -128,9 +128,13 @@ async function fetchAnnouncements(ticker, days) {
       if (itemDate < cutoff) continue;
 
       // Build the announcement PDF URL from documentKey
-      const pdfUrl = item.url ||
-        ('https://www.asx.com.au/asxpdf/' + dateStr.substring(0, 10).replace(/-/g, '') +
-         '/' + docKey + '.pdf');
+      // documentKey format: "2924-03075061-3A690687" → idsId is the middle segment "03075061"
+      var idsId = '';
+      var parts = docKey.split('-');
+      if (parts.length >= 2) idsId = parts[1];
+
+      var pdfUrl = item.url ||
+        ('https://www.asx.com.au/asx/v2/statistics/displayAnnouncement.do?display=pdf&idsId=' + idsId);
 
       announcements.push({
         id: String(docKey),

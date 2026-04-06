@@ -326,9 +326,9 @@ export interface EventsQueryFilters {
 // ---------------------------------------------------------------------------
 
 const SOURCE_PRIORITY: Record<string, number> = {
-  company_ir: 5,
-  asx_announcement: 4,
-  press_release: 3,
+  asx_announcement: 5,   // Richest data: time, webcast URL, dial-in, passcode
+  press_release: 4,
+  company_ir: 3,          // Early dates (HY/FY/AGM) but usually no webcast details
   calendar_api: 2,
   estimated: 1,
 };
@@ -474,34 +474,53 @@ export async function getEventsFromDB(
   const limit  = filters.limit  ?? 100;
   const offset = filters.offset ?? 0;
 
-  // Use a flexible approach: fetch with all possible conditions
-  const rows = await sql`
-    SELECT *, COUNT(*) OVER() AS _total
-    FROM events
-    WHERE
-      (${tickers} IS NULL OR ticker = ANY(${tickers}))
-      AND (${filters.type ?? null} IS NULL OR event_type = ${filters.type ?? null})
-      AND (${filters.status ?? null} IS NULL OR status = ${filters.status ?? null})
-      AND (${filters.confirmed_only ?? false} = false OR (ir_verified = true AND status = 'confirmed'))
-      AND (${filters.date_from ?? null} IS NULL OR event_date >= ${filters.date_from ?? null}::date)
-      AND (${filters.date_to ?? null} IS NULL OR event_date <= ${filters.date_to ?? null}::date)
-      AND (
-        ${filters.q ?? null} IS NULL
-        OR ticker ILIKE '%' || ${filters.q ?? ''} || '%'
-        OR company_name ILIKE '%' || ${filters.q ?? ''} || '%'
-      )
-    ORDER BY event_date ASC, event_time ASC NULLS LAST
-    LIMIT ${limit}
-    OFFSET ${offset}
-  `;
+  // Build query with simple conditions — Neon tagged templates
+  // struggle with complex IS NULL OR patterns, so we use a two-step
+  // approach: fetch broadly then filter in JS for optional params.
 
-  const total = rows.length > 0 ? Number((rows[0] as Record<string, unknown>)._total) : 0;
+  let rows;
 
-  // Strip the _total helper column from results
-  const events = rows.map((r) => {
-    const { _total, ...rest } = r as Record<string, unknown>;
-    return rest as unknown as EventRow;
+  if (tickers && tickers.length > 0) {
+    rows = await sql`
+      SELECT * FROM events
+      WHERE ticker = ANY(${tickers})
+        AND event_date >= COALESCE(${filters.date_from ?? null}::date, '1900-01-01'::date)
+        AND event_date <= COALESCE(${filters.date_to ?? null}::date, '2100-01-01'::date)
+      ORDER BY event_date ASC, event_time ASC NULLS LAST
+      LIMIT 5000
+    `;
+  } else if (filters.q) {
+    const q = `%${filters.q}%`;
+    rows = await sql`
+      SELECT * FROM events
+      WHERE (ticker ILIKE ${q} OR company_name ILIKE ${q})
+        AND event_date >= COALESCE(${filters.date_from ?? null}::date, '1900-01-01'::date)
+        AND event_date <= COALESCE(${filters.date_to ?? null}::date, '2100-01-01'::date)
+      ORDER BY event_date ASC, event_time ASC NULLS LAST
+      LIMIT 5000
+    `;
+  } else {
+    rows = await sql`
+      SELECT * FROM events
+      WHERE event_date >= COALESCE(${filters.date_from ?? null}::date, '1900-01-01'::date)
+        AND event_date <= COALESCE(${filters.date_to ?? null}::date, '2100-01-01'::date)
+      ORDER BY event_date ASC, event_time ASC NULLS LAST
+      LIMIT 5000
+    `;
+  }
+
+  // Apply remaining filters in JS
+  let events = (rows as EventRow[]).filter((e) => {
+    if (filters.type && e.event_type !== filters.type) return false;
+    if (filters.status && e.status !== filters.status) return false;
+    if (filters.confirmed_only && !(e.ir_verified && e.status === 'confirmed')) return false;
+    return true;
   });
+
+  const total = events.length;
+
+  // Apply pagination
+  events = events.slice(offset, offset + limit);
 
   return { events, total };
 }

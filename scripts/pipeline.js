@@ -1,6 +1,6 @@
 // ============================================================
 // Pipeline Orchestrator
-// Runs detect.js then notify.js in sequence.
+// Runs detect.js, verify.js, then notify.js in sequence.
 // Captures output and exit codes. Suitable for GitHub Actions.
 //
 // Required env vars: GROQ_API_KEY, DATABASE_URL, RESEND_API_KEY, INVITE_FROM_EMAIL
@@ -66,8 +66,8 @@ async function main() {
     process.exit(1);
   }
 
-  // Step 1: Detection
-  console.log('[pipeline] ==> Step 1: Event Detection');
+  // Step 1: Detection (ASX announcements)
+  console.log('[pipeline] ==> Step 1: Event Detection (ASX Announcements)');
   console.log('');
 
   const detectScript = path.resolve(__dirname, 'detect.js');
@@ -75,14 +75,26 @@ async function main() {
 
   if (detectCode !== 0) {
     console.error('[pipeline] Detection script failed with exit code ' + detectCode);
-    // Continue to notification anyway — there may be previously detected events to notify
-    console.log('[pipeline] Continuing to notification step despite detection failure...\n');
+    // Continue to verification anyway — IR pages are independent
+    console.log('[pipeline] Continuing to verification step despite detection failure...\n');
   }
 
-  // Step 2: Notification
+  // Step 2: IR Page Verification (highest-priority source)
+  console.log('\n[pipeline] ==> Step 2: IR Page Verification');
+  console.log('');
+
+  const verifyScript = path.resolve(__dirname, 'verify.js');
+  const verifyCode = await runScript(verifyScript);
+
+  if (verifyCode !== 0) {
+    console.error('[pipeline] Verification script failed with exit code ' + verifyCode);
+    console.log('[pipeline] Continuing to notification step despite verification failure...\n');
+  }
+
+  // Step 3: Notification
   // Only run if RESEND_API_KEY is available
   if (process.env.RESEND_API_KEY) {
-    console.log('\n[pipeline] ==> Step 2: Event Notification');
+    console.log('\n[pipeline] ==> Step 3: Event Notification');
     console.log('');
 
     const notifyScript = path.resolve(__dirname, 'notify.js');
@@ -92,7 +104,7 @@ async function main() {
       console.error('[pipeline] Notification script failed with exit code ' + notifyCode);
     }
   } else {
-    console.log('\n[pipeline] ==> Step 2: Skipped (RESEND_API_KEY not set)');
+    console.log('\n[pipeline] ==> Step 3: Skipped (RESEND_API_KEY not set)');
   }
 
   // Summary

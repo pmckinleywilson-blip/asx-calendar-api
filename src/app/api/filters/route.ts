@@ -5,22 +5,16 @@ import { INDEX_TIERS, EVENT_TYPES } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
-const CORS_HEADERS = {
+const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
-  'X-Api-Version': '1.0.0',
 };
 
 export function OPTIONS() {
-  return NextResponse.json(null, { headers: CORS_HEADERS });
+  return NextResponse.json(null, { headers: CORS });
 }
 
-/**
- * GET /api/filters
- *
- * Returns all available filter options for building UIs or agent tool schemas.
- */
 export function GET() {
   try {
     const { sectors, industries } = getFilterOptions();
@@ -34,13 +28,12 @@ export function GET() {
         eventTypes: [...EVENT_TYPES],
         dateRange,
       },
-      { headers: CORS_HEADERS }
+      { headers: CORS }
     );
   } catch (err) {
-    console.error('Filters API error:', err);
     return NextResponse.json(
-      { error: 'internal_error', message: 'An internal error occurred.', status: 500 },
-      { status: 500, headers: CORS_HEADERS }
+      { error: 'internal_error', message: String(err) },
+      { status: 500, headers: CORS }
     );
   }
 }

@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { filterEvents } from '@/lib/events';
-import { EventsQuery, APIResponse, CalendarEvent, INDEX_TIERS, EVENT_TYPES } from '@/lib/types';
+import { loadEvents } from '@/lib/events';
+import { loadCompanies } from '@/lib/companies';
+import type { EventItem } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
-const CORS_HEADERS = {
+const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
@@ -12,91 +13,117 @@ const CORS_HEADERS = {
 };
 
 export function OPTIONS() {
-  return NextResponse.json(null, { headers: CORS_HEADERS });
+  return NextResponse.json(null, { headers: CORS });
 }
 
 /**
  * GET /api/events
  *
- * Query parameters:
- *   index    — asx20 | asx50 | asx100 | asx200 | asx300 | all-ords | small-ords
- *   sector   — GICS sector (partial, case-insensitive)
- *   industry — GICS industry group (partial, case-insensitive)
- *   type     — earnings | agm | egm | ex-dividend | dividend-payment | ipo | trading-halt | capital-raise | other
- *   code     — Comma-separated ASX codes (e.g. BHP,CBA,CSL)
- *   from     — Start date ISO 8601 (YYYY-MM-DD)
- *   to       — End date ISO 8601 (YYYY-MM-DD)
- *   limit    — Max results (default 50, max 500)
- *   offset   — Pagination offset (default 0)
+ * Matches the SP500 project's query interface:
+ *   q            — search ticker or company name
+ *   ticker       — comma-separated ASX codes
+ *   index        — asx20|asx50|asx100|asx200|asx300|all-ords|small-ords
+ *   sector       — GICS sector (partial, case-insensitive)
+ *   type         — earnings|investor_day|conference|ad_hoc
+ *   confirmed_only — "true" to filter tentative
+ *   date_from    — YYYY-MM-DD
+ *   date_to      — YYYY-MM-DD
+ *   per_page     — results per page (default 5000)
+ *   page         — page number (default 1)
  */
 export function GET(request: NextRequest) {
   try {
-    const params = request.nextUrl.searchParams;
+    const p = request.nextUrl.searchParams;
+    let results = loadEvents() as EventItem[];
+    const companies = loadCompanies();
 
-    // Validate index
-    const indexParam = params.get('index') ?? undefined;
-    if (indexParam && !INDEX_TIERS.includes(indexParam as any)) {
-      return NextResponse.json(
-        {
-          error: 'invalid_parameter',
-          message: `Invalid index "${indexParam}". Valid values: ${INDEX_TIERS.join(', ')}`,
-          status: 400,
-        },
-        { status: 400, headers: CORS_HEADERS }
+    // Search (q) — ticker or company name
+    const q = p.get('q');
+    if (q) {
+      const ql = q.toLowerCase();
+      results = results.filter(
+        (e) =>
+          e.ticker.toLowerCase().includes(ql) ||
+          e.company_name.toLowerCase().includes(ql)
       );
     }
 
-    // Validate event type
-    const typeParam = params.get('type') ?? undefined;
-    if (typeParam && !EVENT_TYPES.includes(typeParam as any)) {
-      return NextResponse.json(
-        {
-          error: 'invalid_parameter',
-          message: `Invalid type "${typeParam}". Valid values: ${EVENT_TYPES.join(', ')}`,
-          status: 400,
-        },
-        { status: 400, headers: CORS_HEADERS }
-      );
+    // Ticker filter
+    const ticker = p.get('ticker');
+    if (ticker) {
+      const codes = ticker.split(',').map((t) => t.trim().toUpperCase());
+      results = results.filter((e) => codes.includes(e.ticker));
     }
 
-    const query: EventsQuery = {
-      index: indexParam as EventsQuery['index'],
-      sector: params.get('sector') ?? undefined,
-      industry: params.get('industry') ?? undefined,
-      type: typeParam as EventsQuery['type'],
-      code: params.get('code') ?? undefined,
-      from: params.get('from') ?? undefined,
-      to: params.get('to') ?? undefined,
-      limit: Math.min(parseInt(params.get('limit') ?? '50', 10), 500),
-      offset: parseInt(params.get('offset') ?? '0', 10),
-    };
+    // Index filter — resolve company codes in that index
+    const index = p.get('index');
+    if (index) {
+      const indexCodes = new Set(
+        companies
+          .filter((c) => c.indices.includes(index as any))
+          .map((c) => c.code)
+      );
+      results = results.filter((e) => indexCodes.has(e.ticker));
+    }
 
-    const { events, total } = filterEvents(query);
+    // Sector filter
+    const sector = p.get('sector');
+    if (sector) {
+      const sl = sector.toLowerCase();
+      const sectorCodes = new Set(
+        companies
+          .filter((c) => c.sector.toLowerCase().includes(sl))
+          .map((c) => c.code)
+      );
+      results = results.filter((e) => sectorCodes.has(e.ticker));
+    }
 
-    const response: APIResponse<CalendarEvent[]> = {
-      data: events,
-      meta: {
+    // Event type filter
+    const type = p.get('type');
+    if (type) {
+      results = results.filter((e) => e.event_type === type);
+    }
+
+    // Confirmed only
+    if (p.get('confirmed_only') === 'true') {
+      results = results.filter((e) => e.status === 'confirmed');
+    }
+
+    // Date range
+    const dateFrom = p.get('date_from');
+    if (dateFrom) {
+      results = results.filter((e) => e.event_date >= dateFrom);
+    }
+    const dateTo = p.get('date_to');
+    if (dateTo) {
+      results = results.filter((e) => e.event_date <= dateTo);
+    }
+
+    // Sort by date
+    results.sort((a, b) => a.event_date.localeCompare(b.event_date) || (a.event_time || '').localeCompare(b.event_time || ''));
+
+    // Pagination
+    const total = results.length;
+    const perPage = Math.min(parseInt(p.get('per_page') || '5000', 10), 5000);
+    const page = Math.max(parseInt(p.get('page') || '1', 10), 1);
+    const offset = (page - 1) * perPage;
+    const paged = results.slice(offset, offset + perPage);
+
+    return NextResponse.json(
+      {
+        events: paged,
         total,
-        limit: query.limit!,
-        offset: query.offset!,
-        filters: {
-          index: query.index,
-          sector: query.sector,
-          industry: query.industry,
-          type: query.type,
-          code: query.code,
-          from: query.from,
-          to: query.to,
-        },
+        page,
+        per_page: perPage,
+        pages: Math.ceil(total / perPage),
       },
-    };
-
-    return NextResponse.json(response, { headers: CORS_HEADERS });
+      { headers: CORS }
+    );
   } catch (err) {
     console.error('Events API error:', err);
     return NextResponse.json(
-      { error: 'internal_error', message: 'An internal error occurred.', status: 500 },
-      { status: 500, headers: CORS_HEADERS }
+      { error: 'internal_error', message: String(err), status: 500 },
+      { status: 500, headers: CORS }
     );
   }
 }

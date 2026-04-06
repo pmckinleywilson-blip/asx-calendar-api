@@ -1,581 +1,258 @@
-'use client';
+"use client";
 
-import { useState, useEffect, useCallback } from 'react';
-
-// ---- Types (mirrored from lib/types.ts for client) ----
-
-interface CalendarEvent {
-  id: string;
-  companyCode: string;
-  companyName: string;
-  eventType: string;
-  title: string;
-  date: string;
-  time?: string;
-  description?: string;
-  source?: string;
-  confirmed: boolean;
-}
-
-interface Company {
-  code: string;
-  name: string;
-  sector: string;
-  industryGroup: string;
-  marketCapRank: number;
-  indices: string[];
-}
-
-interface FiltersData {
-  indices: string[];
-  sectors: string[];
-  industries: string[];
-  eventTypes: string[];
-  dateRange: { earliest: string; latest: string } | null;
-}
-
-// ---- Helpers ----
-
-const INDEX_LABELS: Record<string, string> = {
-  asx20: 'ASX 20',
-  asx50: 'ASX 50',
-  asx100: 'ASX 100',
-  asx200: 'ASX 200',
-  asx300: 'ASX 300',
-  'all-ords': 'All Ords',
-  'small-ords': 'Small Ords',
-};
-
-const EVENT_TYPE_LABELS: Record<string, string> = {
-  earnings: 'Earnings',
-  agm: 'AGM',
-  egm: 'EGM',
-  'ex-dividend': 'Ex-Dividend',
-  'dividend-payment': 'Dividend Payment',
-  ipo: 'IPO',
-  'trading-halt': 'Trading Halt',
-  'capital-raise': 'Capital Raise',
-  other: 'Other',
-};
-
-const EVENT_TYPE_COLORS: Record<string, string> = {
-  earnings: 'bg-blue-100 text-blue-800',
-  agm: 'bg-purple-100 text-purple-800',
-  egm: 'bg-violet-100 text-violet-800',
-  'ex-dividend': 'bg-amber-100 text-amber-800',
-  'dividend-payment': 'bg-green-100 text-green-800',
-  ipo: 'bg-pink-100 text-pink-800',
-  'trading-halt': 'bg-red-100 text-red-800',
-  'capital-raise': 'bg-cyan-100 text-cyan-800',
-  other: 'bg-gray-100 text-gray-800',
-};
-
-function formatDate(dateStr: string): string {
-  const d = new Date(dateStr + 'T00:00:00');
-  return d.toLocaleDateString('en-AU', {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
-}
-
-// ---- Main Component ----
+import { useState, useEffect, useCallback } from "react";
+import EventsTable from "@/components/EventsTable";
+import ActionBar from "@/components/ActionBar";
+import Filters from "@/components/Filters";
+import WatchlistUpload from "@/components/WatchlistUpload";
+import type { EventItem } from "@/lib/types";
 
 export default function Home() {
-  const [filters, setFilters] = useState<FiltersData | null>(null);
-  const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const [total, setTotal] = useState(0);
+  const [events, setEvents] = useState<EventItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
 
-  // Filter state
-  const [selectedIndex, setSelectedIndex] = useState('');
-  const [selectedSector, setSelectedSector] = useState('');
-  const [selectedIndustry, setSelectedIndustry] = useState('');
-  const [selectedType, setSelectedType] = useState('');
-  const [searchCode, setSearchCode] = useState('');
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate] = useState('');
+  // Filters
+  const [index, setIndex] = useState("");
+  const [sector, setSector] = useState("");
+  const [eventType, setEventType] = useState("");
+  const [confirmedOnly, setConfirmedOnly] = useState(false);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
-  // Tab: 'events' | 'companies'
-  const [tab, setTab] = useState<'events' | 'companies'>('events');
-  const [companies, setCompanies] = useState<Company[]>([]);
-  const [companiesTotal, setCompaniesTotal] = useState(0);
+  // Search
+  const [searchInput, setSearchInput] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
 
-  // Load filter options
-  useEffect(() => {
-    fetch('/api/filters')
-      .then((r) => r.json())
-      .then(setFilters)
-      .catch(console.error);
-  }, []);
-
-  // Fetch events
-  const fetchEvents = useCallback(() => {
-    setLoading(true);
-    const params = new URLSearchParams();
-    if (selectedIndex) params.set('index', selectedIndex);
-    if (selectedSector) params.set('sector', selectedSector);
-    if (selectedIndustry) params.set('industry', selectedIndustry);
-    if (selectedType) params.set('type', selectedType);
-    if (searchCode) params.set('code', searchCode.toUpperCase());
-    if (fromDate) params.set('from', fromDate);
-    if (toDate) params.set('to', toDate);
-    params.set('limit', '200');
-
-    fetch(`/api/events?${params}`)
-      .then((r) => r.json())
-      .then((data) => {
-        setEvents(data.data ?? []);
-        setTotal(data.meta?.total ?? 0);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, [selectedIndex, selectedSector, selectedIndustry, selectedType, searchCode, fromDate, toDate]);
-
-  // Fetch companies
-  const fetchCompanies = useCallback(() => {
-    setLoading(true);
-    const params = new URLSearchParams();
-    if (selectedIndex) params.set('index', selectedIndex);
-    if (selectedSector) params.set('sector', selectedSector);
-    if (selectedIndustry) params.set('industry', selectedIndustry);
-    if (searchCode) params.set('search', searchCode);
-    params.set('limit', '200');
-
-    fetch(`/api/companies?${params}`)
-      .then((r) => r.json())
-      .then((data) => {
-        setCompanies(data.data ?? []);
-        setCompaniesTotal(data.meta?.total ?? 0);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, [selectedIndex, selectedSector, selectedIndustry, searchCode]);
-
-  useEffect(() => {
-    if (tab === 'events') fetchEvents();
-    else fetchCompanies();
-  }, [tab, fetchEvents, fetchCompanies]);
-
-  const clearFilters = () => {
-    setSelectedIndex('');
-    setSelectedSector('');
-    setSelectedIndustry('');
-    setSelectedType('');
-    setSearchCode('');
-    setFromDate('');
-    setToDate('');
+  // Timezone — default to AEST, persisted in localStorage
+  const [timezone, setTimezone] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("aw_timezone") || "AEST";
+    }
+    return "AEST";
+  });
+  const handleTimezoneChange = (tz: string) => {
+    setTimezone(tz);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("aw_timezone", tz);
+    }
   };
 
+  // Watchlist
+  const [watchlistTickers, setWatchlistTickers] = useState<string[] | null>(
+    null
+  );
+
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearchQuery(searchInput.trim().toUpperCase());
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  const loadEvents = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams({ per_page: "5000" });
+      if (index) params.set("index", index);
+      if (sector) params.set("sector", sector);
+      if (eventType) params.set("type", eventType);
+      if (confirmedOnly) params.set("confirmed_only", "true");
+      if (dateFrom) params.set("date_from", dateFrom);
+      if (dateTo) params.set("date_to", dateTo);
+      if (watchlistTickers) params.set("ticker", watchlistTickers.join(","));
+      if (searchQuery) params.set("q", searchQuery);
+
+      const res = await fetch(`/api/events?${params}`);
+      if (!res.ok) throw new Error(`API error: ${res.status}`);
+      const data = await res.json();
+      setEvents(data.events || []);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [index, sector, eventType, confirmedOnly, dateFrom, dateTo, watchlistTickers, searchQuery]);
+
+  useEffect(() => {
+    loadEvents();
+  }, [loadEvents]);
+
+  const handleWatchlistUpload = async (file: File) => {
+    try {
+      const text = await file.text();
+      const lines = text.split("\n");
+      if (lines.length < 2) return;
+
+      const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
+      const tickerCol = headers.findIndex(
+        (h) =>
+          h === "ticker" ||
+          h === "symbol" ||
+          h === "code" ||
+          h === "asx code" ||
+          h === "asx_code" ||
+          h === "stock"
+      );
+      if (tickerCol === -1) {
+        setError("CSV must have a 'ticker', 'code', or 'asx code' column");
+        return;
+      }
+
+      const tickers = lines
+        .slice(1)
+        .map((line) => {
+          const cells = line.split(",");
+          return cells[tickerCol]
+            ?.trim()
+            .replace(/[^A-Za-z0-9.]/g, "")
+            .toUpperCase();
+        })
+        .filter((t) => t && t.length <= 10);
+
+      if (tickers.length === 0) {
+        setError("No valid tickers found in CSV");
+        return;
+      }
+
+      setWatchlistTickers([...new Set(tickers)] as string[]);
+    } catch (e: any) {
+      setError(e.message);
+    }
+  };
+
+  // KPI stats
+  const totalEvents = events.length;
+  const confirmedCount = events.filter((e) => e.status === "confirmed").length;
+  const tentativeCount = totalEvents - confirmedCount;
+  const withWebcast = events.filter((e) => e.webcast_url).length;
+
   return (
-    <main className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 py-6">
-          <h1 className="text-3xl font-bold text-gray-900">
-            ASX Calendar API
-          </h1>
-          <p className="mt-1 text-gray-500">
-            Corporate events calendar for all ASX-listed companies.
-            Earnings, AGMs, dividends &amp; more.
-          </p>
-          <div className="mt-3 flex gap-3 text-sm">
-            <a
-              href="/openapi.json"
-              className="text-blue-600 hover:underline"
-              target="_blank"
-            >
-              OpenAPI Spec
-            </a>
-            <span className="text-gray-300">|</span>
-            <a
-              href="/.well-known/ai-plugin.json"
-              className="text-blue-600 hover:underline"
-              target="_blank"
-            >
-              AI Plugin Manifest
-            </a>
-            <span className="text-gray-300">|</span>
-            <a
-              href="/api/health"
-              className="text-blue-600 hover:underline"
-              target="_blank"
-            >
-              Health Check
-            </a>
-          </div>
-        </div>
-      </header>
-
-      <div className="max-w-7xl mx-auto px-4 py-6">
-        {/* Tabs */}
-        <div className="flex gap-1 mb-6">
-          <button
-            onClick={() => setTab('events')}
-            className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${
-              tab === 'events'
-                ? 'bg-blue-600 text-white'
-                : 'bg-white text-gray-600 hover:bg-gray-100'
-            }`}
-          >
-            Events Calendar
-          </button>
-          <button
-            onClick={() => setTab('companies')}
-            className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${
-              tab === 'companies'
-                ? 'bg-blue-600 text-white'
-                : 'bg-white text-gray-600 hover:bg-gray-100'
-            }`}
-          >
-            Companies
-          </button>
-        </div>
-
-        {/* Filters */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="font-semibold text-gray-700 text-sm uppercase tracking-wide">
-              Filters
-            </h2>
-            <button
-              onClick={clearFilters}
-              className="text-xs text-blue-600 hover:underline"
-            >
-              Clear all
-            </button>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-            {/* Index */}
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">
-                Index
-              </label>
-              <select
-                value={selectedIndex}
-                onChange={(e) => setSelectedIndex(e.target.value)}
-                className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm bg-white"
-              >
-                <option value="">All</option>
-                {filters?.indices.map((idx) => (
-                  <option key={idx} value={idx}>
-                    {INDEX_LABELS[idx] ?? idx}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Sector */}
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">
-                Sector
-              </label>
-              <select
-                value={selectedSector}
-                onChange={(e) => setSelectedSector(e.target.value)}
-                className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm bg-white"
-              >
-                <option value="">All</option>
-                {filters?.sectors.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Industry */}
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">
-                Industry
-              </label>
-              <select
-                value={selectedIndustry}
-                onChange={(e) => setSelectedIndustry(e.target.value)}
-                className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm bg-white"
-              >
-                <option value="">All</option>
-                {filters?.industries.map((ind) => (
-                  <option key={ind} value={ind}>
-                    {ind}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Event Type (events tab only) */}
-            {tab === 'events' && (
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">
-                  Event Type
-                </label>
-                <select
-                  value={selectedType}
-                  onChange={(e) => setSelectedType(e.target.value)}
-                  className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm bg-white"
-                >
-                  <option value="">All</option>
-                  {filters?.eventTypes.map((t) => (
-                    <option key={t} value={t}>
-                      {EVENT_TYPE_LABELS[t] ?? t}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {/* Company Code / Search */}
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">
-                {tab === 'events' ? 'Code(s)' : 'Search'}
-              </label>
-              <input
-                type="text"
-                value={searchCode}
-                onChange={(e) => setSearchCode(e.target.value)}
-                placeholder={tab === 'events' ? 'BHP,CBA' : 'Name or code'}
-                className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm"
-              />
-            </div>
-
-            {/* Date range (events tab only) */}
-            {tab === 'events' && (
-              <>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">
-                    From
-                  </label>
-                  <input
-                    type="date"
-                    value={fromDate}
-                    onChange={(e) => setFromDate(e.target.value)}
-                    className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">
-                    To
-                  </label>
-                  <input
-                    type="date"
-                    value={toDate}
-                    onChange={(e) => setToDate(e.target.value)}
-                    className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm"
-                  />
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Results count */}
-        <div className="mb-4 text-sm text-gray-500">
-          {loading ? (
-            'Loading...'
-          ) : tab === 'events' ? (
-            <>
-              Showing {events.length} of {total} events
-            </>
-          ) : (
-            <>
-              Showing {companies.length} of {companiesTotal} companies
-            </>
-          )}
-        </div>
-
-        {/* Events Table */}
-        {tab === 'events' && (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-600">
-                      Date
-                    </th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-600">
-                      Code
-                    </th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-600">
-                      Company
-                    </th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-600">
-                      Type
-                    </th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-600">
-                      Title
-                    </th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-600">
-                      Status
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {events.map((event) => (
-                    <tr key={event.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 whitespace-nowrap text-gray-900 font-medium">
-                        {formatDate(event.date)}
-                        {event.time && (
-                          <span className="text-gray-400 ml-1 text-xs">
-                            {event.time}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 font-mono font-bold text-blue-700">
-                        {event.companyCode}
-                      </td>
-                      <td className="px-4 py-3 text-gray-700">
-                        {event.companyName}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
-                            EVENT_TYPE_COLORS[event.eventType] ??
-                            'bg-gray-100 text-gray-800'
-                          }`}
-                        >
-                          {EVENT_TYPE_LABELS[event.eventType] ??
-                            event.eventType}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-gray-700">{event.title}</td>
-                      <td className="px-4 py-3">
-                        {event.confirmed ? (
-                          <span className="text-green-600 text-xs font-medium">
-                            Confirmed
-                          </span>
-                        ) : (
-                          <span className="text-amber-500 text-xs font-medium">
-                            Estimated
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                  {events.length === 0 && !loading && (
-                    <tr>
-                      <td
-                        colSpan={6}
-                        className="px-4 py-12 text-center text-gray-400"
-                      >
-                        No events match the current filters.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* Companies Table */}
-        {tab === 'companies' && (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-600">
-                      Rank
-                    </th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-600">
-                      Code
-                    </th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-600">
-                      Company
-                    </th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-600">
-                      Sector
-                    </th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-600">
-                      Industry Group
-                    </th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-600">
-                      Indices
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {companies.map((co) => (
-                    <tr key={co.code} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 text-gray-400 font-mono text-xs">
-                        #{co.marketCapRank}
-                      </td>
-                      <td className="px-4 py-3 font-mono font-bold text-blue-700">
-                        {co.code}
-                      </td>
-                      <td className="px-4 py-3 text-gray-900">{co.name}</td>
-                      <td className="px-4 py-3 text-gray-700">{co.sector}</td>
-                      <td className="px-4 py-3 text-gray-700">
-                        {co.industryGroup}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex flex-wrap gap-1">
-                          {co.indices.map((idx) => (
-                            <span
-                              key={idx}
-                              className="inline-block px-1.5 py-0.5 rounded text-xs bg-gray-100 text-gray-600"
-                            >
-                              {INDEX_LABELS[idx] ?? idx}
-                            </span>
-                          ))}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                  {companies.length === 0 && !loading && (
-                    <tr>
-                      <td
-                        colSpan={6}
-                        className="px-4 py-12 text-center text-gray-400"
-                      >
-                        No companies match the current filters.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* API usage hint */}
-        <div className="mt-8 bg-gray-800 text-gray-200 rounded-lg p-6 text-sm font-mono">
-          <p className="text-gray-400 mb-2"># Example API calls</p>
-          <p className="mb-1">
-            <span className="text-green-400">GET</span>{' '}
-            /api/events?index=asx200&amp;type=earnings&amp;from=2026-08-01&amp;to=2026-08-31
-          </p>
-          <p className="mb-1">
-            <span className="text-green-400">GET</span>{' '}
-            /api/events?sector=Materials&amp;type=ex-dividend
-          </p>
-          <p className="mb-1">
-            <span className="text-green-400">GET</span>{' '}
-            /api/companies?index=asx100&amp;sector=Financials
-          </p>
-          <p className="mb-1">
-            <span className="text-green-400">GET</span>{' '}
-            /api/events?code=BHP,CBA,CSL
-          </p>
-          <p>
-            <span className="text-green-400">GET</span> /api/filters
-          </p>
-        </div>
+    <div>
+      {/* KPI Row */}
+      <div className="flex items-center gap-4 py-1.5 mb-2 border-b border-[#ddd] text-[10px] c-muted">
+        <span>
+          EVENTS: <strong className="text-[#1b1b1b]">{totalEvents}</strong>
+        </span>
+        <span>
+          CONFIRMED:{" "}
+          <strong className="c-green">{confirmedCount}</strong>
+        </span>
+        <span>
+          TENTATIVE:{" "}
+          <strong className="c-amber">{tentativeCount}</strong>
+        </span>
+        <span>
+          WEBCAST: <strong className="c-blue">{withWebcast}</strong>
+        </span>
+        <span className="ml-auto">
+          <WatchlistUpload
+            onUpload={handleWatchlistUpload}
+            onClear={() => setWatchlistTickers(null)}
+            isActive={!!watchlistTickers}
+            tickerCount={watchlistTickers?.length}
+          />
+        </span>
       </div>
 
-      {/* Footer */}
-      <footer className="border-t border-gray-200 mt-12 py-6 text-center text-xs text-gray-400">
-        ASX Calendar API v1.0.0 &middot; Data is indicative only &middot;{' '}
-        <a
-          href="/openapi.json"
-          className="text-blue-500 hover:underline"
-          target="_blank"
-        >
-          OpenAPI Spec
-        </a>
-      </footer>
-    </main>
+      {/* Subscribe CTA */}
+      <a
+        href="/subscribe"
+        className="block mb-2 px-3 py-2 bg-[#1b1b1b] text-white no-underline hover:bg-[#333]"
+      >
+        <span className="text-[10px] tracking-[1px]">
+          SUBSCRIBE FOR AUTO-INVITES
+        </span>
+        <span className="text-[9px] ml-2 px-1.5 py-0.5 bg-white/15 tracking-wider">
+          FREE / NO ACCOUNT
+        </span>
+        <br />
+        <span className="text-[9px] text-[#999] mt-0.5 inline-block">
+          Enter watchlist and email once. Calendar invites sent directly as
+          events are confirmed — with webcast links and dial-in details.
+        </span>
+      </a>
+
+      {/* Filters */}
+      <Filters
+        index={index}
+        onIndexChange={setIndex}
+        sector={sector}
+        onSectorChange={setSector}
+        eventType={eventType}
+        onEventTypeChange={setEventType}
+        confirmedOnly={confirmedOnly}
+        onConfirmedOnlyChange={setConfirmedOnly}
+        dateFrom={dateFrom}
+        onDateFromChange={setDateFrom}
+        dateTo={dateTo}
+        onDateToChange={setDateTo}
+        timezone={timezone}
+        onTimezoneChange={handleTimezoneChange}
+      />
+
+      {/* Tentative warning */}
+      <div className="mb-2 px-2 py-1 border-l-2 border-[#9a6700] text-[9px] c-muted bg-[#fffbe6]">
+        <strong className="c-amber">TENTATIVE </strong> events may not have final
+        times or webcast details. Adding individually creates a snapshot that
+        won&apos;t auto-update.{" "}
+        <a href="/subscribe" className="c-blue hover:underline">
+          Subscribe
+        </a>{" "}
+        for auto-updating invites.
+      </div>
+
+      {/* Error */}
+      {error && (
+        <div className="mb-2 px-2 py-1 border-l-2 border-[#cf222e] text-[9px] c-red">
+          {error}{" "}
+          <button
+            className="c-muted hover:underline"
+            onClick={() => setError(null)}
+          >
+            [dismiss]
+          </button>
+        </div>
+      )}
+
+      {/* Loading / Table */}
+      {loading ? (
+        <div className="text-center py-8 c-muted text-[10px]">
+          LOADING EVENTS...
+        </div>
+      ) : (
+        <EventsTable
+          events={events}
+          onSelectionChange={setSelectedIds}
+          watchlistTickers={watchlistTickers}
+          searchValue={searchInput}
+          onSearchChange={setSearchInput}
+          timezone={timezone}
+        />
+      )}
+
+      {/* Sticky action bar */}
+      <ActionBar
+        selectedIds={selectedIds}
+      />
+
+      {/* Schema.org structured data */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "WebSite",
+            name: "ASX Wire",
+            url: "https://asx-calendar-api.vercel.app",
+            description:
+              "Free ASX events calendar with webcast links and calendar invites for all ASX-listed companies",
+          }),
+        }}
+      />
+    </div>
   );
 }

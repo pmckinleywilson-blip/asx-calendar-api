@@ -1,8 +1,18 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #fefefe;
+  --foreground: #1b1b1b;
+  --muted: #999;
+  --border: #ccc;
+  --border-light: #eee;
+  --green: #1a7f37;
+  --red: #cf222e;
+  --blue: #0550ae;
+  --amber: #9a6700;
+  --highlight: #fffbe6;
+  --hover: #f7f7f7;
+  --kpi-bg: #f2f2f2;
 }
 
 @theme inline {
@@ -12,15 +22,93 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-mono), 'Courier New', Courier, monospace;
+  font-size: 11px;
+  line-height: 1.4;
 }
+
+/* Terminal-light table styles */
+.ew-tbl {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.ew-tbl th {
+  text-align: left;
+  color: var(--muted);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  padding: 3px 6px;
+  border-bottom: 1px solid #bbb;
+  font-weight: 400;
+}
+
+.ew-tbl td {
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--border-light);
+  color: var(--foreground);
+}
+
+.ew-tbl tr:hover td {
+  background: var(--hover);
+}
+
+.ew-tbl .r {
+  text-align: right;
+}
+
+/* Status badges */
+.ew-badge {
+  font-size: 8px;
+  padding: 0px 4px;
+  border-radius: 2px;
+  display: inline-block;
+  letter-spacing: 0.5px;
+  font-weight: 500;
+  border: 1px solid;
+}
+
+.ew-confirmed {
+  color: var(--green);
+  border-color: var(--green);
+}
+
+.ew-tentative {
+  color: var(--amber);
+  border-color: var(--amber);
+}
+
+/* Date separator rows */
+.ew-sep td {
+  background: var(--kpi-bg);
+  color: #777;
+  font-size: 9px;
+  font-weight: 500;
+  padding: 2px 6px;
+  letter-spacing: 1px;
+  border-bottom: 1px solid #ddd;
+}
+
+/* Watchlist highlight */
+.ew-watched td {
+  background: var(--highlight);
+}
+
+/* Links */
+.ew-link {
+  color: var(--blue);
+  font-size: 9px;
+  font-weight: 500;
+}
+
+/* Colors */
+.c-green { color: var(--green); }
+.c-red { color: var(--red); }
+.c-blue { color: var(--blue); }
+.c-muted { color: var(--muted); }
+.c-amber { color: var(--amber); }

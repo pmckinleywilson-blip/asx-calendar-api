@@ -99,51 +99,50 @@ async function fetchAnnouncements(ticker, days) {
   const announcements = [];
   const seen = new Set();
 
-  // Try market-sensitive announcements first, then all announcements
-  const urls = [
-    'https://www.asx.com.au/asx/1/company/' + ticker + '/announcements?count=20&market_sensitive=true',
-    'https://www.asx.com.au/asx/1/company/' + ticker + '/announcements?count=20',
-  ];
+  // Use the Markit Digital API (the current working ASX data endpoint)
+  const apiUrl = 'https://asx.api.markitdigital.com/asx-research/1.0/companies/' + ticker +
+    '/announcements?count=20&market_sensitive=false';
 
-  for (let i = 0; i < urls.length; i++) {
-    const url = urls[i];
-    try {
-      const raw = await fetchURL(url);
-      const data = JSON.parse(raw);
-      const items = data.data || data || [];
+  try {
+    const raw = await fetchURL(apiUrl);
+    const data = JSON.parse(raw);
+    const items = (data.data && data.data.items) || [];
 
-      if (!Array.isArray(items)) continue;
-
-      const cutoff = new Date();
-      cutoff.setDate(cutoff.getDate() - days);
-
-      for (let j = 0; j < items.length; j++) {
-        const item = items[j];
-        const id = item.id || item.document_id || (ticker + '_' + j);
-
-        if (seen.has(id)) continue;
-        seen.add(id);
-
-        const dateStr = item.document_date || item.date || '';
-        const itemDate = new Date(dateStr);
-        if (itemDate < cutoff) continue;
-
-        announcements.push({
-          id: String(id),
-          title: item.header || item.title || 'Untitled',
-          date: dateStr.substring(0, 10),
-          url: item.url || ('https://www.asx.com.au/asx/statistics/displayAnnouncement.do?display=pdf&idsId=' + id),
-          market_sensitive: !!item.market_sensitive,
-        });
-      }
-    } catch (err) {
-      console.log('  [asx-api] Warning: failed to fetch ' + url + ' — ' + err.message);
+    if (!Array.isArray(items)) {
+      console.log('  [asx-api] No items array for ' + ticker);
+      return announcements;
     }
 
-    // Respect rate limits between requests
-    if (i < urls.length - 1) {
-      await delay(REQUEST_DELAY_MS);
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+
+    for (let j = 0; j < items.length; j++) {
+      const item = items[j];
+      const docKey = item.documentKey || (ticker + '_' + j);
+
+      if (seen.has(docKey)) continue;
+      seen.add(docKey);
+
+      const dateStr = item.date || '';
+      const itemDate = new Date(dateStr);
+      if (itemDate < cutoff) continue;
+
+      // Build the announcement PDF URL from documentKey
+      const pdfUrl = item.url ||
+        ('https://www.asx.com.au/asxpdf/' + dateStr.substring(0, 10).replace(/-/g, '') +
+         '/' + docKey + '.pdf');
+
+      announcements.push({
+        id: String(docKey),
+        title: item.headline || item.header || 'Untitled',
+        date: dateStr.substring(0, 10),
+        url: pdfUrl,
+        market_sensitive: !!item.isPriceSensitive,
+        announcement_type: item.announcementType || '',
+      });
     }
+  } catch (err) {
+    console.log('  [asx-api] Warning: failed to fetch announcements for ' + ticker + ' — ' + err.message);
   }
 
   return announcements;

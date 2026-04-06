@@ -154,6 +154,30 @@ export async function getSubscribersForTicker(
 }
 
 /**
+ * Reactivate a previously deactivated subscription, optionally updating
+ * tickers and calendar type.
+ */
+export async function reactivateSubscription(
+  token: string,
+  tickers: string[],
+  calendarType: string,
+): Promise<boolean> {
+  const sql = getSQL();
+  if (!sql) return false;
+
+  const tickersJson = JSON.stringify(tickers);
+
+  const rows = await sql`
+    UPDATE subscribers
+    SET is_active = true, tickers = ${tickersJson}, calendar_type = ${calendarType}
+    WHERE feed_token = ${token}
+    RETURNING id
+  `;
+
+  return rows.length > 0;
+}
+
+/**
  * Soft-delete: mark subscription as inactive.
  */
 export async function deactivateSubscription(token: string): Promise<boolean> {

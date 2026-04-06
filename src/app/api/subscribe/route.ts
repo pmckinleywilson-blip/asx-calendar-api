@@ -3,6 +3,7 @@ import { randomBytes } from 'crypto';
 import {
   getSubscriptionByEmail,
   createSubscription,
+  reactivateSubscription,
 } from '@/lib/db';
 import { sendWelcomeEmail } from '@/lib/email';
 
@@ -50,16 +51,12 @@ export async function POST(request: NextRequest) {
 
       let feedToken: string;
 
-      if (existing) {
-        // Re-use existing token, update tickers by creating a fresh row
-        // (simple approach: deactivate old, create new)
+      if (existing && existing.is_active) {
+        // Already active — return existing info
         feedToken = existing.feed_token;
-
-        // For now we just return the existing subscription info.
-        // A full upsert (UPDATE tickers) could be added later.
         const feedUrl = `${protocol}://${host}/api/feed/${feedToken}.ics`;
 
-        console.log(`[subscribe] Existing: ${email} -> ${tickers.join(',')}`);
+        console.log(`[subscribe] Existing active: ${email}`);
 
         return NextResponse.json(
           {
@@ -67,6 +64,30 @@ export async function POST(request: NextRequest) {
             events_confirmed: 0,
             events_pending: tickers.length,
             message: `You are already subscribed. Your feed URL is unchanged.`,
+          } satisfies import('@/lib/types').SubscribeResponse,
+          { headers: CORS },
+        );
+      }
+
+      if (existing && !existing.is_active) {
+        // Was unsubscribed — reactivate with updated tickers
+        feedToken = existing.feed_token;
+        await reactivateSubscription(feedToken, tickers, calendarType);
+
+        const feedUrl = `${protocol}://${host}/api/feed/${feedToken}.ics`;
+
+        sendWelcomeEmail(email, tickers, feedUrl).catch((err) =>
+          console.error('[subscribe] Welcome email error:', err),
+        );
+
+        console.log(`[subscribe] Reactivated: ${email} -> ${tickers.join(',')}`);
+
+        return NextResponse.json(
+          {
+            feed_url: feedUrl,
+            events_confirmed: 0,
+            events_pending: tickers.length,
+            message: `Welcome back! Resubscribed to ${tickers.length} ASX codes. Calendar invites will be sent to ${email} as events are confirmed.`,
           } satisfies import('@/lib/types').SubscribeResponse,
           { headers: CORS },
         );

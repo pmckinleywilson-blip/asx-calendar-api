@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+# Agent discovery
+Sitemap: https://asx-calendar-api.vercel.app/openapi.json

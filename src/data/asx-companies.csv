@@ -1,0 +1,301 @@
+code,company_name,gics_sector,gics_industry_group,market_cap_rank
+BHP,BHP Group Limited,Materials,Metals & Mining,1
+CBA,Commonwealth Bank of Australia,Financials,Banks,2
+CSL,CSL Limited,Health Care,"Pharmaceuticals, Biotechnology & Life Sciences",3
+NAB,National Australia Bank,Financials,Banks,4
+WBC,Westpac Banking Corporation,Financials,Banks,5
+ANZ,ANZ Group Holdings,Financials,Banks,6
+WES,Wesfarmers Limited,Consumer Discretionary,Retailing,7
+MQG,Macquarie Group Limited,Financials,Diversified Financials,8
+FMG,Fortescue Limited,Materials,Metals & Mining,9
+GMG,Goodman Group,Real Estate,Equity Real Estate Investment Trusts,10
+WOW,Woolworths Group Limited,Consumer Staples,Food & Staples Retailing,11
+TLS,Telstra Group Limited,Communication Services,Telecommunication Services,12
+RIO,Rio Tinto Limited,Materials,Metals & Mining,13
+TCL,Transurban Group,Industrials,Transportation,14
+ALL,Aristocrat Leisure Limited,Consumer Discretionary,Consumer Services,15
+WDS,Woodside Energy Group,Energy,Oil Gas & Consumable Fuels,16
+REA,REA Group Limited,Communication Services,Media & Entertainment,17
+COL,Coles Group Limited,Consumer Staples,Food & Staples Retailing,18
+STO,Santos Limited,Energy,Oil Gas & Consumable Fuels,19
+JHX,James Hardie Industries,Materials,Construction Materials,20
+QBE,QBE Insurance Group,Financials,Insurance,21
+SHL,Sonic Healthcare Limited,Health Care,Health Care Equipment & Services,22
+AMC,Amcor plc,Materials,Containers & Packaging,23
+RHC,Ramsay Health Care,Health Care,Health Care Equipment & Services,24
+ORG,Origin Energy Limited,Utilities,Utilities,25
+XRO,Xero Limited,Information Technology,Software & Services,26
+MIN,Mineral Resources Limited,Materials,Metals & Mining,27
+S32,South32 Limited,Materials,Metals & Mining,28
+AGL,AGL Energy Limited,Utilities,Utilities,29
+CPU,Computershare Limited,Information Technology,Software & Services,30
+IAG,Insurance Australia Group,Financials,Insurance,31
+ASX,ASX Limited,Financials,Diversified Financials,32
+MPL,Medibank Private Limited,Financials,Insurance,33
+APA,APA Group,Utilities,Utilities,34
+SEK,SEEK Limited,Communication Services,Media & Entertainment,35
+TWE,Treasury Wine Estates,Consumer Staples,Food Beverage & Tobacco,36
+CAR,CAR Group Limited,Communication Services,Media & Entertainment,37
+BXB,Brambles Limited,Industrials,Commercial & Professional Services,38
+SVW,Seven Group Holdings,Industrials,Capital Goods,39
+ORI,Orica Limited,Materials,Chemicals,40
+EDV,Endeavour Group Limited,Consumer Staples,Food & Staples Retailing,41
+SGP,Stockland,Real Estate,Equity Real Estate Investment Trusts,42
+MGR,Mirvac Group,Real Estate,Equity Real Estate Investment Trusts,43
+GPT,GPT Group,Real Estate,Equity Real Estate Investment Trusts,44
+DXS,Dexus,Real Estate,Equity Real Estate Investment Trusts,45
+NHF,nib Holdings Limited,Financials,Insurance,46
+ALD,Ampol Limited,Energy,Oil Gas & Consumable Fuels,47
+ILU,Iluka Resources Limited,Materials,Metals & Mining,48
+NST,Northern Star Resources,Materials,Metals & Mining,49
+EVN,Evolution Mining Limited,Materials,Metals & Mining,50
+WTC,WiseTech Global Limited,Information Technology,Software & Services,51
+RWC,Reliance Worldwide Corporation,Industrials,Capital Goods,52
+SFR,Sandfire Resources Limited,Materials,Metals & Mining,53
+TPG,TPG Telecom Limited,Communication Services,Telecommunication Services,54
+DOW,Downer EDI Limited,Industrials,Capital Goods,55
+ALX,Atlas Arteria Limited,Industrials,Transportation,56
+PLS,Pilbara Minerals Limited,Materials,Metals & Mining,57
+LYC,Lynas Rare Earths Limited,Materials,Metals & Mining,58
+IGO,IGO Limited,Materials,Metals & Mining,59
+BEN,Bendigo and Adelaide Bank,Financials,Banks,60
+BOQ,Bank of Queensland,Financials,Banks,61
+HUB,Hub24 Limited,Financials,Diversified Financials,62
+NWS,News Corporation,Communication Services,Media & Entertainment,63
+JBH,JB Hi-Fi Limited,Consumer Discretionary,Retailing,64
+PME,Pro Medicus Limited,Health Care,Health Care Equipment & Services,65
+WEB,Webjet Limited,Consumer Discretionary,Consumer Services,66
+CTD,Corporate Travel Management,Consumer Discretionary,Consumer Services,67
+LNK,Link Administration Holdings,Information Technology,Software & Services,68
+CGF,Challenger Limited,Financials,Diversified Financials,69
+IEL,IDP Education Limited,Consumer Discretionary,Consumer Services,70
+VCX,Vicinity Centres,Real Estate,Equity Real Estate Investment Trusts,71
+CHC,Charter Hall Group,Real Estate,Equity Real Estate Investment Trusts,72
+CWY,Cleanaway Waste Management,Industrials,Commercial & Professional Services,73
+IPL,Incitec Pivot Limited,Materials,Chemicals,74
+BSL,BlueScope Steel Limited,Materials,Metals & Mining,75
+AWC,Alumina Limited,Materials,Metals & Mining,76
+PDN,Paladin Energy Limited,Energy,Oil Gas & Consumable Fuels,77
+WHC,Whitehaven Coal Limited,Energy,Oil Gas & Consumable Fuels,78
+NEC,Nine Entertainment Co,Communication Services,Media & Entertainment,79
+TAH,Tabcorp Holdings Limited,Consumer Discretionary,Consumer Services,80
+FLT,Flight Centre Travel Group,Consumer Discretionary,Consumer Services,81
+QAN,Qantas Airways Limited,Industrials,Transportation,82
+SYD,Sydney Airport Holdings,Industrials,Transportation,83
+AZJ,Aurizon Holdings Limited,Industrials,Transportation,84
+DEG,De Grey Mining Limited,Materials,Metals & Mining,85
+BPT,Beach Energy Limited,Energy,Oil Gas & Consumable Fuels,86
+VEA,Viva Energy Group,Energy,Oil Gas & Consumable Fuels,87
+CGC,Costa Group Holdings,Consumer Staples,Food Beverage & Tobacco,88
+MFG,Magellan Financial Group,Financials,Diversified Financials,89
+PPT,Perpetual Limited,Financials,Diversified Financials,90
+NXT,NEXTDC Limited,Information Technology,Software & Services,91
+ALU,Altium Limited,Information Technology,Software & Services,92
+TYR,Tyro Payments Limited,Information Technology,Software & Services,93
+360,Life360 Inc,Information Technology,Software & Services,94
+LOV,Lovisa Holdings Limited,Consumer Discretionary,Retailing,95
+SUL,Super Retail Group,Consumer Discretionary,Retailing,96
+PMV,Premier Investments Limited,Consumer Discretionary,Retailing,97
+HVN,Harvey Norman Holdings,Consumer Discretionary,Retailing,98
+BWP,BWP Trust,Real Estate,Equity Real Estate Investment Trusts,99
+CQR,Charter Hall Retail REIT,Real Estate,Equity Real Estate Investment Trusts,100
+APE,Eagers Automotive Limited,Consumer Discretionary,Retailing,101
+ARB,ARB Corporation Limited,Consumer Discretionary,"Automobiles & Components",102
+BRG,Breville Group Limited,Consumer Discretionary,Consumer Durables & Apparel,103
+DRR,Deterra Royalties Limited,Materials,Metals & Mining,104
+ELD,Elders Limited,Consumer Staples,Food Beverage & Tobacco,105
+GQG,GQG Partners Inc,Financials,Diversified Financials,106
+HLS,Healius Limited,Health Care,Health Care Equipment & Services,107
+IFM,Infomedia Limited,Information Technology,Software & Services,108
+KAR,Karoon Energy Limited,Energy,Oil Gas & Consumable Fuels,109
+LIC,Lifestyle Communities,Consumer Discretionary,Consumer Services,110
+MAQ,Macquarie Technology Group,Information Technology,Software & Services,111
+NAN,Nanosonics Limited,Health Care,Health Care Equipment & Services,112
+ORA,Orora Limited,Materials,Containers & Packaging,113
+PTM,Platinum Asset Management,Financials,Diversified Financials,114
+RED,Red 5 Limited,Materials,Metals & Mining,115
+SGR,The Star Entertainment Group,Consumer Discretionary,Consumer Services,116
+TLC,Lottery Corporation Limited,Consumer Discretionary,Consumer Services,117
+UNI,Universal Store Holdings,Consumer Discretionary,Retailing,118
+VNT,Ventia Services Group,Industrials,Commercial & Professional Services,119
+WGX,Westgold Resources Limited,Materials,Metals & Mining,120
+AIS,Aeris Resources Limited,Materials,Metals & Mining,121
+BCB,Bowen Coking Coal Limited,Materials,Metals & Mining,122
+CRN,Coronado Global Resources,Materials,Metals & Mining,123
+DDR,Dicker Data Limited,Information Technology,Technology Hardware & Equipment,124
+EQT,EQT Holdings Limited,Financials,Diversified Financials,125
+FPH,Fisher & Paykel Healthcare,Health Care,Health Care Equipment & Services,126
+GOR,Gold Road Resources,Materials,Metals & Mining,127
+HMC,HMC Capital Limited,Financials,Diversified Financials,128
+IMD,Imdex Limited,Energy,Energy Equipment & Services,129
+JIN,Jumbo Interactive Limited,Consumer Discretionary,Consumer Services,130
+KMD,KMD Brands Limited,Consumer Discretionary,Consumer Durables & Apparel,131
+LRS,Latin Resources Limited,Materials,Metals & Mining,132
+MMS,McMillan Shakespeare Limited,Industrials,Commercial & Professional Services,133
+NWH,NRW Holdings Limited,Industrials,Capital Goods,134
+OZL,OZ Minerals Limited,Materials,Metals & Mining,135
+PNI,Pinnacle Investment Management,Financials,Diversified Financials,136
+QUB,Qube Holdings Limited,Industrials,Transportation,137
+RRL,Regis Resources Limited,Materials,Metals & Mining,138
+SSM,Service Stream Limited,Industrials,Commercial & Professional Services,139
+TLX,Telix Pharmaceuticals,Health Care,"Pharmaceuticals, Biotechnology & Life Sciences",140
+URW,Unibail-Rodamco-Westfield,Real Estate,Equity Real Estate Investment Trusts,141
+WAF,West African Resources,Materials,Metals & Mining,142
+YAL,Yancoal Australia Limited,Energy,Oil Gas & Consumable Fuels,143
+ZIP,Zip Co Limited,Information Technology,Software & Services,144
+AMA,AMA Group Limited,Consumer Discretionary,"Automobiles & Components",145
+BKW,Brickworks Limited,Materials,Construction Materials,146
+CIP,Centuria Industrial REIT,Real Estate,Equity Real Estate Investment Trusts,147
+DBI,Dalrymple Bay Infrastructure,Industrials,Transportation,148
+EML,EML Payments Limited,Information Technology,Software & Services,149
+FBU,Fletcher Building Limited,Materials,Construction Materials,150
+GNC,GrainCorp Limited,Consumer Staples,Food Beverage & Tobacco,151
+HPI,Hotel Property Investments,Real Estate,Equity Real Estate Investment Trusts,152
+INA,Ingenia Communities Group,Real Estate,Real Estate Management & Development,153
+JMS,Jupiter Mines Limited,Materials,Metals & Mining,154
+KLS,Kelsian Group Limited,Industrials,Transportation,155
+LGL,Lynch Group Holdings,Consumer Staples,Food Beverage & Tobacco,156
+MSB,Mesoblast Limited,Health Care,"Pharmaceuticals, Biotechnology & Life Sciences",157
+NHC,New Hope Corporation,Energy,Oil Gas & Consumable Fuels,158
+OFX,OFX Group Limited,Financials,Diversified Financials,159
+PGH,Pact Group Holdings,Materials,Containers & Packaging,160
+RDY,ReadyTech Holdings,Information Technology,Software & Services,161
+SMR,Stanmore Resources Limited,Materials,Metals & Mining,162
+TGR,Tassal Group Limited,Consumer Staples,Food Beverage & Tobacco,163
+VUK,Virgin Money UK PLC,Financials,Banks,164
+WOR,Worley Limited,Energy,Energy Equipment & Services,165
+ACF,Acrow Limited,Industrials,Capital Goods,166
+BGL,Bellevue Gold Limited,Materials,Metals & Mining,167
+CMW,Cromwell Property Group,Real Estate,Equity Real Estate Investment Trusts,168
+DSE,Dropsuite Limited,Information Technology,Software & Services,169
+EOS,Electro Optic Systems,Industrials,Capital Goods,170
+FMG,Fortescue Metals Group,Materials,Metals & Mining,171
+GUD,GUD Holdings Limited,Industrials,Capital Goods,172
+HDN,HomeCo Daily Needs REIT,Real Estate,Equity Real Estate Investment Trusts,173
+IPH,IPH Limited,Industrials,Commercial & Professional Services,174
+JLG,Johns Lyng Group Limited,Industrials,Capital Goods,175
+KGN,Kogan.com Limited,Consumer Discretionary,Retailing,176
+LFG,Liberty Financial Group,Financials,Diversified Financials,177
+MVF,Monash IVF Group Limited,Health Care,Health Care Equipment & Services,178
+NUF,Nufarm Limited,Materials,Chemicals,179
+OML,oOh!media Limited,Communication Services,Media & Entertainment,180
+PXA,Pexa Group Limited,Information Technology,Software & Services,181
+REG,Regis Healthcare Limited,Health Care,Health Care Equipment & Services,182
+SDF,Steadfast Group Limited,Financials,Insurance,183
+TUA,Tuas Limited,Communication Services,Telecommunication Services,184
+VHT,Volpara Health Technologies,Health Care,Health Care Equipment & Services,185
+WPR,Waypoint REIT,Real Estate,Equity Real Estate Investment Trusts,186
+ABP,Abacus Property Group,Real Estate,Equity Real Estate Investment Trusts,187
+BLD,Boral Limited,Materials,Construction Materials,188
+CNI,Centuria Capital Group,Real Estate,Real Estate Management & Development,189
+DVP,Develop Global Limited,Materials,Metals & Mining,190
+ERA,Energy Resources of Australia,Energy,Oil Gas & Consumable Fuels,191
+FSF,Fonterra Shareholders Fund,Consumer Staples,Food Beverage & Tobacco,192
+GWA,GWA Group Limited,Industrials,Capital Goods,193
+HCW,HealthCo Healthcare & Wellness REIT,Real Estate,Equity Real Estate Investment Trusts,194
+IRE,Iress Limited,Information Technology,Software & Services,195
+JDO,Judo Capital Holdings,Financials,Banks,196
+KED,Keypath Education International,Consumer Discretionary,Consumer Services,197
+LTR,Liontown Resources Limited,Materials,Metals & Mining,198
+MND,Monadelphous Group Limited,Industrials,Capital Goods,199
+NTO,Nitro Software Limited,Information Technology,Software & Services,200
+OPY,Openpay Group Limited,Information Technology,Software & Services,201
+PPM,Pepper Money Limited,Financials,Diversified Financials,202
+RMS,Ramelius Resources Limited,Materials,Metals & Mining,203
+SPK,Spark New Zealand Limited,Communication Services,Telecommunication Services,204
+TRS,Reject Shop Limited,Consumer Discretionary,Retailing,205
+VGL,Vista Group International,Information Technology,Software & Services,206
+ABY,Adore Beauty Group,Consumer Discretionary,Retailing,207
+BRN,Brainchip Holdings,Information Technology,Semiconductors & Semiconductor Equipment,208
+CXO,Core Lithium Limited,Materials,Metals & Mining,209
+DYL,Deep Yellow Limited,Energy,Oil Gas & Consumable Fuels,210
+EXP,Experience Co Limited,Consumer Discretionary,Consumer Services,211
+GEM,G8 Education Limited,Consumer Discretionary,Consumer Services,212
+HAS,Haslam Creek Holdings,Materials,Metals & Mining,213
+IMM,Immutep Limited,Health Care,"Pharmaceuticals, Biotechnology & Life Sciences",214
+JRV,Jervois Global Limited,Materials,Metals & Mining,215
+KAI,Kairos Minerals Limited,Materials,Metals & Mining,216
+LEG,Legend Mining Limited,Materials,Metals & Mining,217
+MYX,Mayne Pharma Group,Health Care,"Pharmaceuticals, Biotechnology & Life Sciences",218
+NIC,Nickel Industries Limited,Materials,Metals & Mining,219
+OBM,Ora Banda Mining Limited,Materials,Metals & Mining,220
+PAN,Panoramic Resources,Materials,Metals & Mining,221
+RFG,Retail Food Group Limited,Consumer Discretionary,Consumer Services,222
+SIQ,Smartgroup Corporation,Industrials,Commercial & Professional Services,223
+TIG,Tigers Realm Coal,Energy,Oil Gas & Consumable Fuels,224
+VRC,Volt Resources Limited,Materials,Metals & Mining,225
+WBT,Weebit Nano Limited,Information Technology,Semiconductors & Semiconductor Equipment,226
+ACW,Actinogen Medical Limited,Health Care,"Pharmaceuticals, Biotechnology & Life Sciences",227
+BRL,Bathurst Resources Limited,Energy,Oil Gas & Consumable Fuels,228
+CYG,Coventry Group Limited,Industrials,Capital Goods,229
+DTL,Data#3 Limited,Information Technology,Software & Services,230
+EGH,Eureka Group Holdings,Real Estate,Real Estate Management & Development,231
+GRR,Grange Resources Limited,Materials,Metals & Mining,232
+HLO,Helloworld Travel Limited,Consumer Discretionary,Consumer Services,233
+INR,ioneer Limited,Materials,Metals & Mining,234
+JXT,Jaxsta Limited,Information Technology,Software & Services,235
+KSN,Kingston Resources Limited,Materials,Metals & Mining,236
+LKE,Lake Resources NL,Materials,Metals & Mining,237
+NEA,Nearmap Limited,Information Technology,Software & Services,238
+OMH,OM Holdings Limited,Materials,Metals & Mining,239
+PET,Phoslock Environmental Technologies,Materials,Chemicals,240
+RBL,Redbubble Limited,Consumer Discretionary,Retailing,241
+SKC,SkyCity Entertainment Group,Consumer Discretionary,Consumer Services,242
+TNE,TechnologyOne Limited,Information Technology,Software & Services,243
+VTG,Vita Group Limited,Communication Services,Telecommunication Services,244
+WHF,Whitefield Limited,Financials,Diversified Financials,245
+ADH,Adairs Limited,Consumer Discretionary,Retailing,246
+BVS,Bravura Solutions Limited,Information Technology,Software & Services,247
+CDA,Codan Limited,Information Technology,Technology Hardware & Equipment,248
+DUG,DUG Technology Limited,Information Technology,Software & Services,249
+EHL,Emeco Holdings Limited,Energy,Energy Equipment & Services,250
+GRB,Geon Resources Limited,Materials,Metals & Mining,251
+HPG,HiPages Group Holdings,Communication Services,Media & Entertainment,252
+IRI,Integrated Research Limited,Information Technology,Software & Services,253
+JAN,Janison Education Group,Information Technology,Software & Services,254
+KPG,Kelly Partners Group Holdings,Financials,Diversified Financials,255
+LME,Limeade Inc,Information Technology,Software & Services,256
+NVX,Novonix Limited,Materials,Chemicals,257
+OPT,Opthea Limited,Health Care,"Pharmaceuticals, Biotechnology & Life Sciences",258
+PPS,Praemium Limited,Information Technology,Software & Services,259
+RPL,Regal Partners Limited,Financials,Diversified Financials,260
+SLR,Silver Lake Resources,Materials,Metals & Mining,261
+TPC,TPC Consolidated Limited,Energy,Oil Gas & Consumable Fuels,262
+VUL,Vulcan Energy Resources,Materials,Metals & Mining,263
+WGN,Wagners Holding Company,Materials,Construction Materials,264
+AEF,Australian Ethical Investment,Financials,Diversified Financials,265
+BWX,BWX Limited,Consumer Staples,Household & Personal Products,266
+CDP,Carindale Property Trust,Real Estate,Equity Real Estate Investment Trusts,267
+DMP,Domino's Pizza Enterprises,Consumer Discretionary,Consumer Services,268
+EBR,EBR Systems Inc,Health Care,Health Care Equipment & Services,269
+GTN,GTN Limited,Communication Services,Media & Entertainment,270
+HRL,HRL Holdings Limited,Industrials,Commercial & Professional Services,271
+ISU,iSelect Limited,Financials,Insurance,272
+JHG,Janus Henderson Group,Financials,Diversified Financials,273
+KOR,Korab Resources Limited,Materials,Metals & Mining,274
+LNW,Light & Wonder Inc,Consumer Discretionary,Consumer Services,275
+NWC,New World Resources,Materials,Metals & Mining,276
+OVT,Ovanti Limited,Information Technology,Software & Services,277
+PRN,Perenti Limited,Materials,Metals & Mining,278
+SBM,St Barbara Limited,Materials,Metals & Mining,279
+TTM,Titan Minerals Limited,Materials,Metals & Mining,280
+VMS,Venture Minerals Limited,Materials,Metals & Mining,281
+WOA,Wide Open Agriculture,Consumer Staples,Food Beverage & Tobacco,282
+AHY,Asaleo Care Limited,Consumer Staples,Household & Personal Products,283
+CBO,Cobram Estate Olives,Consumer Staples,Food Beverage & Tobacco,284
+DVR,Diverger Limited,Financials,Diversified Financials,285
+EMR,Emerald Resources NL,Materials,Metals & Mining,286
+GDG,Generation Development Group,Financials,Insurance,287
+HUM,Humm Group Limited,Financials,Diversified Financials,288
+IGL,IVE Group Limited,Industrials,Commercial & Professional Services,289
+JGH,Jade Gas Holdings,Energy,Oil Gas & Consumable Fuels,290
+KPO,Kalina Power Limited,Utilities,Utilities,291
+LPD,Lepidico Limited,Materials,Metals & Mining,292
+NXD,NextEd Group Limited,Consumer Discretionary,Consumer Services,293
+OSL,OncoSil Medical Limited,Health Care,Health Care Equipment & Services,294
+PRU,Perseus Mining Limited,Materials,Metals & Mining,295
+SHV,Select Harvests Limited,Consumer Staples,Food Beverage & Tobacco,296
+TRJ,Trajan Group Holdings,Health Care,Health Care Equipment & Services,297
+VSL,Vulcan Steel Limited,Industrials,Capital Goods,298
+WR1,Winsome Resources Limited,Materials,Metals & Mining,299
+AIZ,Air New Zealand Limited,Industrials,Transportation,300

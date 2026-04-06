@@ -1,0 +1,242 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "ASX Calendar API",
+    "description": "Australian Securities Exchange corporate events calendar. Query upcoming earnings, AGMs, ex-dividend dates, and other events for all ASX-listed companies (~2000). Filter by ASX index (20/50/100/200/300/All Ords/Small Ords), GICS sector, industry group, event type, company code, and date range.",
+    "version": "1.0.0",
+    "contact": {
+      "name": "ASX Calendar API"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://asx-calendar-api.vercel.app",
+      "description": "Production"
+    }
+  ],
+  "paths": {
+    "/api/events": {
+      "get": {
+        "operationId": "getEvents",
+        "summary": "List ASX corporate events",
+        "description": "Returns upcoming corporate events (earnings, AGMs, dividends, etc.) for ASX-listed companies. Supports filtering by index, sector, industry, event type, company code, and date range.",
+        "parameters": [
+          {
+            "name": "index",
+            "in": "query",
+            "description": "Filter by ASX index membership",
+            "schema": {
+              "type": "string",
+              "enum": ["asx20", "asx50", "asx100", "asx200", "asx300", "all-ords", "small-ords"]
+            }
+          },
+          {
+            "name": "sector",
+            "in": "query",
+            "description": "Filter by GICS sector (case-insensitive partial match, e.g. 'materials', 'financials')",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "industry",
+            "in": "query",
+            "description": "Filter by GICS industry group (case-insensitive partial match, e.g. 'banks', 'metals')",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Filter by event type",
+            "schema": {
+              "type": "string",
+              "enum": ["earnings", "agm", "egm", "ex-dividend", "dividend-payment", "ipo", "trading-halt", "capital-raise", "other"]
+            }
+          },
+          {
+            "name": "code",
+            "in": "query",
+            "description": "Filter by comma-separated ASX company codes (e.g. 'BHP,CBA,CSL')",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Start date (YYYY-MM-DD)",
+            "schema": { "type": "string", "format": "date" }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "End date (YYYY-MM-DD)",
+            "schema": { "type": "string", "format": "date" }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Max results (default 50, max 500)",
+            "schema": { "type": "integer", "default": 50, "maximum": 500 }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Pagination offset",
+            "schema": { "type": "integer", "default": 0 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response with events",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/CalendarEvent" }
+                    },
+                    "meta": { "$ref": "#/components/schemas/Meta" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/companies": {
+      "get": {
+        "operationId": "getCompanies",
+        "summary": "List ASX-listed companies",
+        "description": "Returns ASX-listed companies with GICS sector classification and index membership. Supports filtering by index, sector, industry, and search.",
+        "parameters": [
+          {
+            "name": "index",
+            "in": "query",
+            "description": "Filter by ASX index membership",
+            "schema": {
+              "type": "string",
+              "enum": ["asx20", "asx50", "asx100", "asx200", "asx300", "all-ords", "small-ords"]
+            }
+          },
+          {
+            "name": "sector",
+            "in": "query",
+            "description": "Filter by GICS sector",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "industry",
+            "in": "query",
+            "description": "Filter by GICS industry group",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Search by company name or ASX code",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "default": 100, "maximum": 500 }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": { "type": "integer", "default": 0 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response with companies",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Company" }
+                    },
+                    "meta": { "$ref": "#/components/schemas/Meta" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/filters": {
+      "get": {
+        "operationId": "getFilters",
+        "summary": "Get available filter options",
+        "description": "Returns all available index tiers, GICS sectors, industry groups, event types, and date range. Use this to discover valid filter values before querying events or companies.",
+        "responses": {
+          "200": {
+            "description": "Available filter options"
+          }
+        }
+      }
+    },
+    "/api/health": {
+      "get": {
+        "operationId": "getHealth",
+        "summary": "API health check",
+        "description": "Returns API status, data counts, and version.",
+        "responses": {
+          "200": {
+            "description": "Health status"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CalendarEvent": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "companyCode": { "type": "string", "description": "ASX ticker code" },
+          "companyName": { "type": "string" },
+          "eventType": {
+            "type": "string",
+            "enum": ["earnings", "agm", "egm", "ex-dividend", "dividend-payment", "ipo", "trading-halt", "capital-raise", "other"]
+          },
+          "title": { "type": "string" },
+          "date": { "type": "string", "format": "date" },
+          "time": { "type": "string", "description": "HH:MM in AEST" },
+          "description": { "type": "string" },
+          "source": { "type": "string" },
+          "confirmed": { "type": "boolean", "description": "true = confirmed date, false = estimated" }
+        }
+      },
+      "Company": {
+        "type": "object",
+        "properties": {
+          "code": { "type": "string", "description": "ASX ticker code" },
+          "name": { "type": "string" },
+          "sector": { "type": "string", "description": "GICS sector" },
+          "industryGroup": { "type": "string", "description": "GICS industry group" },
+          "marketCapRank": { "type": "integer" },
+          "indices": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "ASX indices this company belongs to"
+          }
+        }
+      },
+      "Meta": {
+        "type": "object",
+        "properties": {
+          "total": { "type": "integer" },
+          "limit": { "type": "integer" },
+          "offset": { "type": "integer" },
+          "filters": { "type": "object" }
+        }
+      }
+    }
+  }
+}

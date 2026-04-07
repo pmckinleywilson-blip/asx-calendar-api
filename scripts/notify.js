@@ -89,8 +89,11 @@ function generateIcs(event) {
   if (event.phone_passcode) descParts.push('Passcode: ' + event.phone_passcode);
   const description = descParts.join('\n');
 
-  // Build DTSTART
-  const dateParts = event.event_date.substring(0, 10).split('-');
+  // Build DTSTART — event_date may be a Date object or string from Postgres
+  const dateStr = typeof event.event_date === 'string'
+    ? event.event_date.substring(0, 10)
+    : event.event_date.toISOString().substring(0, 10);
+  const dateParts = dateStr.split('-');
   let dtstart;
   if (hasTime) {
     const timeParts = event.event_time.split(':');
@@ -99,7 +102,7 @@ function generateIcs(event) {
     dtstart = 'DTSTART;VALUE=DATE:' + dateParts[0] + dateParts[1] + dateParts[2];
   }
 
-  const status = event.status === 'confirmed' ? 'CONFIRMED' : 'TENTATIVE';
+  const status = event.status === 'confirmed' ? 'CONFIRMED' : 'TENTATIVE';  // ICS only has CONFIRMED/TENTATIVE
 
   const lines = [
     'BEGIN:VCALENDAR',
@@ -217,13 +220,13 @@ async function main() {
   const sql = neon(databaseUrl);
   const resend = new Resend(resendApiKey);
 
-  // Step 1: Query unnotified confirmed events (event_date >= today)
+  // Step 1: Query unnotified events with confirmed or date_confirmed status
   const today = new Date().toISOString().substring(0, 10);
-  console.log('[notify] Querying confirmed events with event_date >= ' + today + ' and notified_at IS NULL...');
+  console.log('[notify] Querying date_confirmed/confirmed events with event_date >= ' + today + ' and notified_at IS NULL...');
 
   const events = await sql`
     SELECT * FROM events
-    WHERE ir_verified = true
+    WHERE status IN ('confirmed', 'date_confirmed')
       AND notified_at IS NULL
       AND event_date >= ${today}
     ORDER BY event_date ASC

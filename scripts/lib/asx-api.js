@@ -162,13 +162,10 @@ async function fetchAnnouncements(ticker, days) {
   // Failsafe: the Markit API has a hard cap of 5 items with no pagination.
   // If we hit the cap, the oldest item may not cover our full scan window.
   // Log a warning so we can track how often this happens, and record the gap.
-  if (hitCap) {
-    var oldestDate = announcements.length > 0
-      ? announcements[announcements.length - 1].date
-      : 'unknown';
-    console.log('    [asx-api] CAP HIT for ' + ticker + ': API returned ' + announcements.length +
-      ' items (cap=5). Oldest visible: ' + oldestDate +
-      '. Announcements before this date are not visible.');
+  // Only log cap hits when we actually got 5 items back (the real cap)
+  if (hitCap && announcements.length >= 5) {
+    var oldestDate = announcements[announcements.length - 1].date;
+    console.log('    [asx-api] CAP HIT for ' + ticker + ': 5 items, oldest: ' + oldestDate);
   }
 
   return announcements;

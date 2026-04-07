@@ -85,6 +85,24 @@ export async function initDatabase(): Promise<void> {
   //   estimated      = date estimated from prior corresponding period
   //   tentative      = detected from announcement but unverified
   //   postponed / cancelled
+  // Seen announcements table for the continuous poller.
+  // Tracks every announcement ID we've ever processed so we never re-classify.
+  await sql`
+    CREATE TABLE IF NOT EXISTS seen_announcements (
+      document_key  TEXT PRIMARY KEY,
+      ticker        TEXT NOT NULL,
+      title         TEXT,
+      announcement_date DATE,
+      first_seen_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `;
+
+  // Index for cleanup queries (delete old entries to keep table lean)
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_seen_announcements_date
+    ON seen_announcements (first_seen_at)
+  `;
+
   // Migrate status to simplified 3-tier system:
   //   confirmed      = date + time + webcast (ready to attend)
   //   date_confirmed = date confirmed via IR or ASX announcement (time/webcast TBC)

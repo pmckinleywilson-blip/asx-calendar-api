@@ -2,10 +2,7 @@
 nixPkgs = ["nodejs_20", "npm-9_x"]
 
 [phases.install]
-cmds = ["npm ci --omit=dev"]
-
-[phases.build]
-cmds = ["echo 'Skipping Next.js build — this is a worker process'"]
+cmds = ["npm install --omit=dev --no-optional"]
 
 [start]
 cmd = "node scripts/poller.js"

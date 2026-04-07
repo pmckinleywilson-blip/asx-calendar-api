@@ -10,7 +10,7 @@
 const fs = require('fs');
 const path = require('path');
 const { neon } = require('@neondatabase/serverless');
-const { fetchAnnouncementsForTier, fetchAnnouncementContent } = require('./lib/asx-api');
+const { fetchAnnouncements, fetchAnnouncementsForTier, fetchAnnouncementContent } = require('./lib/asx-api');
 const { classifyAnnouncements, extractEventDetails } = require('./lib/groq-classify');
 
 // ---------------------------------------------------------------------------
@@ -258,6 +258,85 @@ async function main() {
   let totalEventsDetected = 0;
   let totalEventsUpserted = 0;
 
+  // ── Priority scan ──────────────────────────────────────────
+  // The ASX API caps at 5 announcements per company. To ensure 100% coverage
+  // for events we care about most, we do a dedicated scan for companies that
+  // have a date_confirmed event in the next 7 days. These are the companies
+  // most likely to be publishing results/webcast details RIGHT NOW, and most
+  // likely to have the cap bite (results day = lots of filings at once).
+  console.log('\n----------------------------------------------------------');
+  console.log('Priority scan: companies with events in the next 7 days');
+  console.log('----------------------------------------------------------\n');
+
+  try {
+    const today = new Date().toISOString().substring(0, 10);
+    const nextWeek = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().substring(0, 10);
+
+    const upcoming = await sql`
+      SELECT DISTINCT ticker FROM events
+      WHERE status = 'date_confirmed'
+        AND webcast_url IS NULL
+        AND event_date >= ${today}
+        AND event_date <= ${nextWeek}
+    `;
+
+    const priorityTickers = upcoming.map(function (r) { return r.ticker; });
+
+    if (priorityTickers.length > 0) {
+      console.log('[detect] Priority tickers (' + priorityTickers.length + '): ' + priorityTickers.join(', '));
+
+      for (let pi = 0; pi < priorityTickers.length; pi++) {
+        const pticker = priorityTickers[pi];
+        const company = companies.find(function (c) { return c.code === pticker; });
+        if (!company) continue;
+
+        console.log('  [' + (pi + 1) + '/' + priorityTickers.length + '] ' + pticker + ' — ' + company.company_name);
+
+        const anns = await fetchAnnouncements(pticker);
+        for (let aj = 0; aj < anns.length; aj++) {
+          anns[aj].ticker = pticker;
+          anns[aj].company_name = company.company_name;
+        }
+
+        if (anns.length === 0) continue;
+
+        // Classify and extract inline (skip batching for priority companies)
+        const relevant = await classifyAnnouncements(anns, groqApiKey);
+        totalClassified += anns.length;
+        totalRelevant += relevant.length;
+
+        for (let ri = 0; ri < relevant.length; ri++) {
+          const ann = relevant[ri];
+          const content = await fetchAnnouncementContent(ann.url);
+          if (!content) continue;
+
+          await delay(GROQ_DELAY_MS);
+          const event = await extractEventDetails(ann, content, groqApiKey);
+          if (!event) continue;
+
+          totalEventsDetected++;
+          console.log('    DETECTED: ' + event.event_type + ' on ' + event.event_date + (event.event_time ? ' at ' + event.event_time : ''));
+
+          const result = await upsertEvent(sql, event);
+          if (result) {
+            totalEventsUpserted++;
+            console.log('    Upserted: event id=' + result.id);
+          }
+        }
+
+        totalCompaniesScanned++;
+        totalAnnouncementsFetched += anns.length;
+
+        if (pi < priorityTickers.length - 1) await delay(CONTENT_FETCH_DELAY_MS);
+      }
+    } else {
+      console.log('[detect] No upcoming date_confirmed events needing webcast details. Skipping priority scan.');
+    }
+  } catch (err) {
+    console.log('[detect] Priority scan error (non-fatal): ' + err.message);
+  }
+
+  // ── Tier-based scan ────────────────────────────────────────
   // Step 3-6: Process each tier
   for (let t = 0; t < tiers.length; t++) {
     // Check global time budget before starting a new tier
@@ -347,12 +426,12 @@ async function main() {
   }
 
   // Step 7: Summary
-  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+  var finalElapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 
   console.log('\n==========================================================');
   console.log('Detection Pipeline Complete');
   console.log('==========================================================');
-  console.log('  Duration:                 ' + elapsed + 's');
+  console.log('  Duration:                 ' + finalElapsed + 's');
   console.log('  Companies scanned:        ' + totalCompaniesScanned);
   console.log('  Announcements fetched:    ' + totalAnnouncementsFetched);
   console.log('  Announcements classified: ' + totalClassified);

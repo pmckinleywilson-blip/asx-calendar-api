@@ -1,10 +1,15 @@
 name: ASX Event Detection Pipeline
 
 on:
-  # Twice daily: 7am and 7pm AEST (UTC+10 → 21:00 and 09:00 UTC)
+  # Every 4 hours during AU market hours (6am–10pm AEST, UTC+10)
+  # This ensures we catch announcements before 5+ filings push them past the API cap.
+  # AEST 6am = UTC 20:00 prior day, AEST 10pm = UTC 12:00
   schedule:
-    - cron: '17 21 * * *'   # 7:17am AEST daily
-    - cron: '17 9 * * *'    # 7:17pm AEST daily
+    - cron: '17 20 * * *'   #  6:17am AEST (pre-market)
+    - cron: '17 0 * * *'    # 10:17am AEST
+    - cron: '17 4 * * *'    #  2:17pm AEST
+    - cron: '17 8 * * *'    #  6:17pm AEST
+    - cron: '17 12 * * *'   # 10:17pm AEST (post-market catch-up)
 
   # Manual trigger for testing
   workflow_dispatch:
@@ -42,10 +47,10 @@ jobs:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           INVITE_FROM_EMAIL: ${{ secrets.INVITE_FROM_EMAIL }}
 
-  # Weekly company data refresh (Sunday 8pm AEST)
+  # Weekly company data refresh (Sunday 6am AEST = Sat 20:17 UTC)
   update-companies:
     runs-on: ubuntu-latest
-    if: github.event.schedule == '17 21 * * *' && github.event_name == 'schedule'
+    if: github.event.schedule == '17 20 * * *' && github.event_name == 'schedule'
     timeout-minutes: 10
 
     steps:

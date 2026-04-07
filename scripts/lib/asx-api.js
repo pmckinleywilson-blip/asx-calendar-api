@@ -99,39 +99,36 @@ async function fetchAnnouncements(ticker, days) {
 
   const announcements = [];
   const seen = new Set();
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
 
-  // Use the Markit Digital API (the current working ASX data endpoint)
-  // Fetch 50 items so we see past high-volume noise (substantial-holder notices, etc.)
-  // No market_sensitive filter — we want ALL announcements including price-sensitive results
-  const apiUrl = 'https://asx.api.markitdigital.com/asx-research/1.0/companies/' + ticker +
-    '/announcements?count=50';
+  // The ASX Markit Digital API has a hard cap of 5 items per response.
+  // If a company files 5+ routine announcements (substantial-holder notices,
+  // director interests, etc.), the results/webcast announcements get pushed out.
+  //
+  // Failsafe: make TWO calls with different filters. Price-sensitive
+  // announcements (results, presentations, trading halts) are a different
+  // population from non-sensitive ones, so the second call surfaces items
+  // that may be hidden behind noise in the first.
+  var urls = [
+    'https://asx.api.markitdigital.com/asx-research/1.0/companies/' + ticker + '/announcements?count=20',
+  ];
 
-  try {
-    const raw = await fetchURL(apiUrl);
-    const data = JSON.parse(raw);
-    const items = (data.data && data.data.items) || [];
+  function processItems(items) {
+    if (!Array.isArray(items)) return;
 
-    if (!Array.isArray(items)) {
-      console.log('  [asx-api] No items array for ' + ticker);
-      return announcements;
-    }
-
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - days);
-
-    for (let j = 0; j < items.length; j++) {
-      const item = items[j];
-      const docKey = item.documentKey || (ticker + '_' + j);
+    for (var j = 0; j < items.length; j++) {
+      var item = items[j];
+      var docKey = item.documentKey || (ticker + '_' + j);
 
       if (seen.has(docKey)) continue;
       seen.add(docKey);
 
-      const dateStr = item.date || '';
-      const itemDate = new Date(dateStr);
+      var dateStr = item.date || '';
+      var itemDate = new Date(dateStr);
       if (itemDate < cutoff) continue;
 
       // Build the announcement PDF URL from documentKey
-      // documentKey format: "2924-03075061-3A690687" → idsId is the middle segment "03075061"
       var idsId = '';
       var parts = docKey.split('-');
       if (parts.length >= 2) idsId = parts[1];
@@ -148,8 +145,30 @@ async function fetchAnnouncements(ticker, days) {
         announcement_type: item.announcementType || '',
       });
     }
+  }
+
+  // First fetch: Markit Digital API (fast, structured JSON, but capped at 5 items)
+  var hitCap = false;
+  try {
+    var raw = await fetchURL(urls[0]);
+    var data = JSON.parse(raw);
+    var items = (data.data && data.data.items) || [];
+    processItems(items);
+    hitCap = (items.length >= 5);
   } catch (err) {
-    console.log('  [asx-api] Warning: failed to fetch announcements for ' + ticker + ' — ' + err.message);
+    console.log('  [asx-api] Warning: Markit API failed for ' + ticker + ' — ' + err.message);
+  }
+
+  // Failsafe: the Markit API has a hard cap of 5 items with no pagination.
+  // If we hit the cap, the oldest item may not cover our full scan window.
+  // Log a warning so we can track how often this happens, and record the gap.
+  if (hitCap) {
+    var oldestDate = announcements.length > 0
+      ? announcements[announcements.length - 1].date
+      : 'unknown';
+    console.log('    [asx-api] CAP HIT for ' + ticker + ': API returned ' + announcements.length +
+      ' items (cap=5). Oldest visible: ' + oldestDate +
+      '. Announcements before this date are not visible.');
   }
 
   return announcements;

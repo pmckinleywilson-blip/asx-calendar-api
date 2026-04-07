@@ -188,7 +188,7 @@ async function upsertIREvent(sql, event) {
     var rows = await sql`
       INSERT INTO events (
         ticker, company_name, event_type, event_date, event_time,
-        timezone, title, description, webcast_url, phone_number,
+        timezone, title, description, webcast_url, replay_url, phone_number,
         phone_passcode, fiscal_period, source, source_url,
         ir_verified, status, updated_at
       ) VALUES (
@@ -201,6 +201,7 @@ async function upsertIREvent(sql, event) {
         ${event.title},
         ${event.description},
         ${event.webcast_url},
+        ${event.replay_url || null},
         ${event.phone_number},
         ${event.phone_passcode},
         ${event.fiscal_period},
@@ -217,6 +218,7 @@ async function upsertIREvent(sql, event) {
         title          = COALESCE(events.title, EXCLUDED.title),
         description    = COALESCE(events.description, EXCLUDED.description),
         webcast_url    = COALESCE(events.webcast_url, EXCLUDED.webcast_url),
+        replay_url     = COALESCE(events.replay_url, EXCLUDED.replay_url),
         phone_number   = COALESCE(events.phone_number, EXCLUDED.phone_number),
         phone_passcode = COALESCE(events.phone_passcode, EXCLUDED.phone_passcode),
         fiscal_period  = COALESCE(EXCLUDED.fiscal_period, events.fiscal_period),

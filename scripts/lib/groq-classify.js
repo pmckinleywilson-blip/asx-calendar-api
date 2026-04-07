@@ -105,43 +105,46 @@ async function callGroq(client, messages, attempt) {
 // CLASSIFICATION SYSTEM PROMPT
 // ---------------------------------------------------------------------------
 
-const CLASSIFY_SYSTEM_PROMPT = `You are an expert ASX (Australian Securities Exchange) analyst. Your task is to classify company announcements by whether they contain information about an upcoming teleconference, webcast, conference call, investor briefing, or results presentation that investors could dial into or watch live.
+const CLASSIFY_SYSTEM_PROMPT = `You are an expert ASX (Australian Securities Exchange) analyst.
 
-IMPORTANT: Webcasts and conference call details are OFTEN embedded in announcements with non-obvious titles. For example:
-- "Half Year Results" → LIKELY contains conference call details
-- "Appendix 4D and Financial Report" → UNLIKELY but may mention a briefing
-- "Strategic Update" → MIGHT contain an investor day or presentation webcast
-- "Trading Halt" → IRRELEVANT
-- "Change of Director's Interest" → IRRELEVANT
-- "Results of Meeting" → IRRELEVANT
-- "Dividend/Distribution" → IRRELEVANT
+GOAL: Identify announcements that contain — or are likely to lead to — information about an investor event that someone could attend, watch, or listen to (e.g. teleconference, webcast, results briefing, investor day, AGM webcast).
 
-Classify each announcement as:
-- "relevant" — likely contains teleconference/webcast event information
-- "possible" — might contain event info, worth checking
-- "irrelevant" — definitely no event info (director changes, trading halts, dividends, appendix filings, etc.)
+REASONING APPROACH — for EACH announcement, think about:
+1. What is the PURPOSE of this announcement? Is it communicating results, strategy, or an event — or is it a regulatory/compliance filing?
+2. Could the underlying corporate activity involve a live briefing? Results announcements almost always have an accompanying webcast. Shareholder emails often contain the access details.
+3. Even if the title is generic, could the CONTENT contain webcast URLs, dial-in numbers, or event logistics?
 
-Return a JSON array of objects: [{"index": 0, "classification": "relevant"}, ...]
-Return ONLY the JSON array, no other text.`;
+Companies communicate webcast details in many non-obvious ways:
+- A "Shareholder Email" or "Shareholder Letter" may contain the webcast URL for an upcoming result
+- A "Media Release" may embed conference call dial-in details at the bottom
+- An "Investor Presentation" PDF may have the webcast link on the cover page
+- An Appendix 4D filing is often accompanied by a separate results briefing
+- A "Trading Halt" signals the company is about to make a material announcement — these are frequently followed by ad-hoc webcasts or conference calls. Classify as "possible".
+- An announcement with [price-sensitive] is more likely to involve a briefing than a routine filing
+
+CLASSIFY each announcement:
+- "relevant" — likely contains or leads to event/webcast information
+- "possible" — uncertain, but the corporate context suggests it could (e.g. trading halts, generic updates)
+- "irrelevant" — purely administrative filing with no plausible connection to an investor event (e.g. substantial holder notices, director interest changes, daily share buy-back notices, cleansing notices, Appendix 3Y/3Z forms)
+
+Return a JSON array: [{"index": 0, "classification": "relevant"}, ...]
+Return ONLY JSON.`;
 
 // ---------------------------------------------------------------------------
 // EXTRACTION SYSTEM PROMPT
 // ---------------------------------------------------------------------------
 
-const EXTRACT_SYSTEM_PROMPT = `You are extracting teleconference/webcast event details from an ASX company announcement.
+const EXTRACT_SYSTEM_PROMPT = `You are extracting investor event details from an ASX company announcement.
 
-Extract ONLY events where investors can dial in or watch a live webcast/conference call. This includes:
-- Earnings results briefings/presentations
-- Investor days
-- Strategic update webcasts
-- M&A announcement conference calls
-- AGM webcasts (if they have a webcast component)
+An "investor event" is anything an investor might want to attend, watch live, or listen to a replay of — such as an earnings briefing, investor day, strategy presentation, conference call, or AGM webcast.
 
-Do NOT extract:
-- Dividend dates (ex-div, record, payment dates)
-- Director appointments
-- Share buyback notices
-- Trading halts (these are not events investors attend)
+REASONING APPROACH:
+1. Read the FULL content carefully. Webcast details are often buried at the bottom of a media release, in a footnote, or in a "For further information" section.
+2. Distinguish between the REPORTING PERIOD end date and the EVENT date. "Half year ended 30 September 2025" means Sep 30 is the period end — the briefing date is when the announcement was released or when the call is scheduled.
+3. Look for ANY access method: webcast URLs (often viostream, webcast.openbriefing.com, or company-hosted), teleconference dial-in numbers, registration links, or references to a live Q&A.
+4. Shareholder emails and letters often contain the PRIMARY webcast link that isn't in the media release itself.
+5. If the announcement references a presentation or briefing happening "today" or "at [time]", that's an event — extract it even if no URL is given.
+6. A replay URL is still valuable — extract it. Investors use replays.
 
 Return JSON:
 {
@@ -151,6 +154,7 @@ Return JSON:
   "event_time": "HH:MM" (24-hour AEST) or null,
   "title": "short descriptive title",
   "webcast_url": "URL" or null,
+  "replay_url": "URL" or null,
   "phone_number": "number" or null,
   "phone_passcode": "code" or null,
   "fiscal_period": "HY2026" or "FY2026" or null,
@@ -158,12 +162,12 @@ Return JSON:
   "confidence": "high" | "medium" | "low"
 }
 
-CRITICAL RULES:
-1. The event date is the DATE OF THE CALL/WEBCAST, not the date of the announcement or the reporting period end date
-2. Times should be in AEST (UTC+10). If the announcement says AEDT, subtract 1 hour to get AEST
-3. Webcast URLs must be from the company's domain, not from news sites
-4. If you find a date but aren't sure if it's the call date vs reporting period date, set confidence to "low"
-5. "has_event" should be false if no teleconference/webcast is mentioned
+RULES:
+1. event_date = the date of the BRIEFING/WEBCAST, not the reporting period end date
+2. Convert all times to AEST (UTC+10). AEDT = AEST+1, so subtract 1 hour
+3. Webcast URLs should be from the company or their webcast provider — not news sites
+4. If a date is mentioned but you cannot determine whether it is the call date or the period date, set confidence to "low"
+5. "has_event" = false only if there is NO mention of any briefing, call, webcast, or presentation event
 6. Return ONLY JSON, no markdown or explanation`;
 
 // ---------------------------------------------------------------------------
@@ -188,11 +192,15 @@ async function classifyAnnouncements(announcements, groqApiKey) {
     const batch = batches[b];
     console.log('  [groq] Batch ' + (b + 1) + '/' + batches.length + ' (' + batch.length + ' items)');
 
-    // Build the list of announcements for the prompt
+    // Build the list of announcements for the prompt — include all metadata
+    // so the LLM can reason holistically about each announcement
     const lines = [];
     for (let i = 0; i < batch.length; i++) {
       const a = batch[i];
-      lines.push(i + '. [' + a.ticker + '] ' + a.title + ' (' + a.date + ')');
+      var parts = i + '. [' + a.ticker + '] ' + a.title + ' (' + a.date + ')';
+      if (a.announcement_type) parts += ' [type: ' + a.announcement_type + ']';
+      if (a.market_sensitive) parts += ' [price-sensitive]';
+      lines.push(parts);
     }
 
     const userPrompt = 'Classify these ASX announcements:\n\n' + lines.join('\n');
@@ -316,6 +324,7 @@ async function extractEventDetails(announcement, content, groqApiKey) {
       event_time: parsed.event_time || null,
       title: parsed.title || announcement.title,
       webcast_url: parsed.webcast_url || null,
+      replay_url: parsed.replay_url || null,
       phone_number: parsed.phone_number || null,
       phone_passcode: parsed.phone_passcode || null,
       fiscal_period: parsed.fiscal_period || null,

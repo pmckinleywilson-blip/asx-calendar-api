@@ -20,6 +20,11 @@ const { classifyAnnouncements, extractEventDetails } = require('./lib/groq-class
 const GROQ_DELAY_MS = 1000;
 const CONTENT_FETCH_DELAY_MS = 500;
 
+// Global time budget: abort gracefully before the GitHub Actions timeout.
+// The pipeline.js orchestrator runs detect → verify → notify sequentially,
+// so detect gets at most ~35 minutes (leaving time for verify + notify).
+const TIME_BUDGET_MS = 35 * 60 * 1000; // 35 minutes
+
 // ---------------------------------------------------------------------------
 // CSV parsing (handles quoted fields with commas)
 // ---------------------------------------------------------------------------
@@ -159,7 +164,7 @@ async function upsertEvent(sql, event) {
     const rows = await sql`
       INSERT INTO events (
         ticker, company_name, event_type, event_date, event_time,
-        timezone, title, description, webcast_url, phone_number,
+        timezone, title, description, webcast_url, replay_url, phone_number,
         phone_passcode, fiscal_period, source, source_url,
         ir_verified, status, updated_at
       ) VALUES (
@@ -172,6 +177,7 @@ async function upsertEvent(sql, event) {
         ${event.title},
         ${event.description},
         ${event.webcast_url},
+        ${event.replay_url || null},
         ${event.phone_number},
         ${event.phone_passcode},
         ${event.fiscal_period},
@@ -188,6 +194,7 @@ async function upsertEvent(sql, event) {
         title          = COALESCE(EXCLUDED.title, events.title),
         description    = COALESCE(EXCLUDED.description, events.description),
         webcast_url    = COALESCE(EXCLUDED.webcast_url, events.webcast_url),
+        replay_url     = COALESCE(EXCLUDED.replay_url, events.replay_url),
         phone_number   = COALESCE(EXCLUDED.phone_number, events.phone_number),
         phone_passcode = COALESCE(EXCLUDED.phone_passcode, events.phone_passcode),
         fiscal_period  = COALESCE(EXCLUDED.fiscal_period, events.fiscal_period),
@@ -253,13 +260,21 @@ async function main() {
 
   // Step 3-6: Process each tier
   for (let t = 0; t < tiers.length; t++) {
+    // Check global time budget before starting a new tier
+    var elapsed = Date.now() - startTime;
+    if (elapsed > TIME_BUDGET_MS) {
+      console.log('\n[detect] Time budget reached (' + (elapsed / 1000).toFixed(0) + 's). Stopping after ' + t + '/' + tiers.length + ' tiers.');
+      break;
+    }
+
     const tier = tiers[t];
     console.log('\n----------------------------------------------------------');
     console.log('Processing tier: ' + tier);
     console.log('----------------------------------------------------------\n');
 
-    // Step 3: Fetch announcements
-    const announcements = await fetchAnnouncementsForTier(companies, tier);
+    // Step 3: Fetch announcements (with per-tier time budget)
+    var tierTimeBudget = TIME_BUDGET_MS - (Date.now() - startTime) - 60000; // leave 60s buffer
+    const announcements = await fetchAnnouncementsForTier(companies, tier, Math.max(tierTimeBudget, 60000));
     const tierCompanyCount = new Set(announcements.map(function (a) { return a.ticker; })).size;
 
     totalCompaniesScanned += tierCompanyCount;
@@ -286,6 +301,12 @@ async function main() {
     console.log('\n[detect] Pass 2: Deep extraction from ' + relevant.length + ' announcements...');
 
     for (let i = 0; i < relevant.length; i++) {
+      // Check time budget before each extraction
+      if ((Date.now() - startTime) > TIME_BUDGET_MS) {
+        console.log('[detect] Time budget reached during extraction. Processed ' + i + '/' + relevant.length + ' announcements.');
+        break;
+      }
+
       const ann = relevant[i];
       console.log('  [' + (i + 1) + '/' + relevant.length + '] ' + ann.ticker + ' — ' + ann.title + ' [' + ann.classification + ']');
 

@@ -7,7 +7,8 @@ const https = require('https');
 const http = require('http');
 
 const USER_AGENT = 'ASXCalendarAPI/1.0 (events calendar)';
-const REQUEST_DELAY_MS = 500;
+const REQUEST_DELAY_MS = 300;
+const CONCURRENCY = 5;
 
 // ---------------------------------------------------------------------------
 // HTTP fetch helper (follows redirects, handles both http and https)
@@ -100,8 +101,10 @@ async function fetchAnnouncements(ticker, days) {
   const seen = new Set();
 
   // Use the Markit Digital API (the current working ASX data endpoint)
+  // Fetch 50 items so we see past high-volume noise (substantial-holder notices, etc.)
+  // No market_sensitive filter — we want ALL announcements including price-sensitive results
   const apiUrl = 'https://asx.api.markitdigital.com/asx-research/1.0/companies/' + ticker +
-    '/announcements?count=20&market_sensitive=false';
+    '/announcements?count=50';
 
   try {
     const raw = await fetchURL(apiUrl);
@@ -172,7 +175,7 @@ async function fetchAnnouncementContent(url) {
 // fetchAnnouncementsForTier — Fetch announcements for a tier of companies
 // ---------------------------------------------------------------------------
 
-async function fetchAnnouncementsForTier(companies, tier) {
+async function fetchAnnouncementsForTier(companies, tier, timeBudgetMs) {
   // Determine rank range for each tier
   const tierRanges = {
     'asx100':    { min: 1, max: 100 },
@@ -193,22 +196,41 @@ async function fetchAnnouncementsForTier(companies, tier) {
   console.log('[asx-api] Fetching announcements for ' + filtered.length + ' companies in tier ' + tier + ' (ranks ' + range.min + '-' + range.max + ')');
 
   const allAnnouncements = [];
+  const tierStart = Date.now();
 
-  for (let i = 0; i < filtered.length; i++) {
-    const company = filtered[i];
-    console.log('  [' + (i + 1) + '/' + filtered.length + '] ' + company.code + ' — ' + company.company_name);
-
-    const anns = await fetchAnnouncements(company.code);
-
-    for (let j = 0; j < anns.length; j++) {
-      anns[j].ticker = company.code;
-      anns[j].company_name = company.company_name;
+  // Process companies in concurrent batches of CONCURRENCY
+  for (let i = 0; i < filtered.length; i += CONCURRENCY) {
+    // Check time budget if provided
+    if (timeBudgetMs && (Date.now() - tierStart) > timeBudgetMs) {
+      console.log('[asx-api] Time budget reached for tier ' + tier + ' after ' + i + '/' + filtered.length + ' companies');
+      break;
     }
 
-    allAnnouncements.push.apply(allAnnouncements, anns);
+    const batch = filtered.slice(i, i + CONCURRENCY);
+    const batchEnd = Math.min(i + CONCURRENCY, filtered.length);
+    console.log('  [' + (i + 1) + '-' + batchEnd + '/' + filtered.length + '] ' + batch.map(function (c) { return c.code; }).join(', '));
 
-    // Delay between companies
-    if (i < filtered.length - 1) {
+    // Fetch all companies in the batch concurrently
+    const results = await Promise.allSettled(
+      batch.map(function (company) {
+        return fetchAnnouncements(company.code).then(function (anns) {
+          for (var j = 0; j < anns.length; j++) {
+            anns[j].ticker = company.code;
+            anns[j].company_name = company.company_name;
+          }
+          return anns;
+        });
+      })
+    );
+
+    for (var r = 0; r < results.length; r++) {
+      if (results[r].status === 'fulfilled' && results[r].value) {
+        allAnnouncements.push.apply(allAnnouncements, results[r].value);
+      }
+    }
+
+    // Brief delay between batches (not between individual companies)
+    if (i + CONCURRENCY < filtered.length) {
       await delay(REQUEST_DELAY_MS);
     }
   }

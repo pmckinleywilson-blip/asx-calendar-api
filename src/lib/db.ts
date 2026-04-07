@@ -73,6 +73,11 @@ export async function initDatabase(): Promise<void> {
       UNIQUE(ticker, event_date, event_type)
     )
   `;
+
+  // Add replay_url column to existing tables that predate it
+  await sql`
+    ALTER TABLE events ADD COLUMN IF NOT EXISTS replay_url TEXT
+  `;
 }
 
 // ---------------------------------------------------------------------------

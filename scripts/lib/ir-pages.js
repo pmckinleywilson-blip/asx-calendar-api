@@ -23,10 +23,10 @@ const SCRAPE_DELAY_MS = 1000;
 
 const IR_URLS = {
   // ASX Top 10
-  CBA:  'https://www.commbank.com.au/about-us/shareholders.html',
+  CBA:  'https://www.commbank.com.au/about-us/investors.html',
   BHP:  'https://www.bhp.com/investors',  // may timeout — large site, keep for retry
   WBC:  'https://www.westpac.com.au/about-westpac/investor-centre/',
-  NAB:  'https://www.nab.com.au/about-us/shareholder-centre',
+  NAB:  'https://www.nab.com.au/about-us/shareholder-centre/financial-disclosures-and-reporting',
   ANZ:  'https://www.anz.com/shareholder/centre/',
   WES:  'https://www.wesfarmers.com.au/investor-centre/results-and-presentations',
   MQG:  'https://www.macquarie.com/au/en/investors.html',
@@ -36,7 +36,7 @@ const IR_URLS = {
 
   // ASX 11-20
   RIO:  'https://www.riotinto.com/invest/reports',
-  TLS:  'https://www.telstra.com.au/aboutus/investors',
+  TLS:  'https://www.telstra.com.au/aboutus/investors/financial-results',
   GMG:  'https://www.goodman.com/investor-centre',
   WOW:  'https://www.woolworthsgroup.com.au/au/en/investors.html',
   TCL:  'https://www.transurban.com/investor-centre',
@@ -66,9 +66,9 @@ const IR_URLS = {
   RMD:  'https://investor.resmed.com/',
   SCG:  'https://www.scentregroup.com/investors',
   CPU:  'https://www.computershare.com/corporate/investor-relations',  // may 404
-  SOL:  'https://www.whsp.com.au/investors',
-  APA:  'https://www.apa.com.au/investors',
-  MIN:  'https://www.mineralresources.com.au/news/category/investors/',
+  SOL:  'https://soulpatts.com.au/investor-centre/investor-overview',
+  APA:  'https://www.apa.com.au/investors-centre',
+  MIN:  'https://www.mineralresources.com.au/investor-centre/',
 
   // ASX 51-70
   MPL:  'https://www.medibank.com.au/about/investor-centre/',
@@ -86,7 +86,7 @@ const IR_URLS = {
   ALD:  'https://www.ampol.com.au/about-ampol/investors',
   TPG:  'https://www.tpgtelecom.com.au/investor-relations',
   WHC:  'https://whitehavencoal.com.au/investors/',
-  QUB:  'https://www.qube.com.au/investors/',
+  QUB:  'https://qube.com.au/investor/',
   GPT:  'https://www.gpt.com.au/investor-centre',
   REH:  'https://group.reece.com/investors',
   SGP:  'https://www.stockland.com.au/investor-centre',
@@ -101,10 +101,10 @@ const IR_URLS = {
   AGL:  'https://www.agl.com.au/about-agl/investors',
   DXS:  'https://www.dexus.com/investing.html',
   IGO:  'https://www.igo.com.au/site/investor-center',
-  HVN:  'https://www.harveynormanholdings.com.au/investors.php',
+  HVN:  'https://www.harveynormanholdings.com.au/pages/reports-announcements',
   BEN:  'https://www.bendigoadelaide.com.au/investor-centre/',
   EDV:  'https://www.endeavourgroup.com.au/investor-relations',
-  CGF:  'https://www.challenger.com.au/shareholder',
+  CGF:  'https://www.challenger.com.au/about-us/shareholder-centre',
   WOR:  'https://www.worley.com/en/investor-relations/',
   NWL:  'https://www.netwealth.com.au/web/about-netwealth/shareholders/',
   VCX:  'https://www.vicinity.com.au/investors',

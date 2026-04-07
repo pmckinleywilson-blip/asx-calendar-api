@@ -208,7 +208,7 @@ async function upsertIREvent(sql, event) {
         ${'company_ir'},
         ${event.source_url},
         ${true},
-        ${'confirmed'},
+        ${'date_confirmed'},
         ${new Date().toISOString()}
       )
       ON CONFLICT (ticker, event_date, event_type)
@@ -225,7 +225,10 @@ async function upsertIREvent(sql, event) {
         source         = CASE WHEN events.source = 'asx_announcement' THEN events.source ELSE 'company_ir' END,
         source_url     = COALESCE(events.source_url, EXCLUDED.source_url),
         ir_verified    = true,
-        status         = CASE WHEN events.webcast_url IS NOT NULL THEN 'confirmed' ELSE events.status END,
+        status         = CASE
+          WHEN events.webcast_url IS NOT NULL AND events.event_time IS NOT NULL THEN 'confirmed'
+          ELSE 'date_confirmed'
+        END,
         updated_at     = NOW()
       RETURNING id, ticker, event_date, event_type
     `;

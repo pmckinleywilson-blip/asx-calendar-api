@@ -6,6 +6,17 @@ import type { EventItem } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
+// Human-readable status labels for the API and frontend
+const STATUS_LABELS: Record<string, string> = {
+  confirmed:      'Confirmed',
+  date_confirmed: 'Date confirmed, time TBC',
+  estimated:      'Estimated based on PCP',
+};
+
+function statusLabel(status: string): string {
+  return STATUS_LABELS[status] || status;
+}
+
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
@@ -89,6 +100,7 @@ export async function GET(request: NextRequest) {
           source_url: row.source_url,
           ir_verified: row.ir_verified,
           status: row.status,
+          status_label: statusLabel(row.status),
           created_at: row.created_at,
           updated_at: row.updated_at,
         }));
@@ -152,7 +164,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (p.get('confirmed_only') === 'true') {
-      results = results.filter((e) => e.status === 'confirmed');
+      results = results.filter((e) => e.status === 'confirmed' || e.status === 'date_confirmed');
     }
 
     const dateFrom = p.get('date_from');

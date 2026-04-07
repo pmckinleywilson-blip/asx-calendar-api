@@ -263,13 +263,16 @@ export default function EventsTable({
       {
         accessorKey: 'status',
         header: 'Status',
-        cell: ({ getValue }) => {
-          const s = getValue<string>();
-          return s === 'confirmed' ? (
-            <span className="ew-confirmed">CONF</span>
-          ) : (
-            <span className="ew-tentative">TENT</span>
-          );
+        cell: ({ row }) => {
+          const s = row.original.status;
+          const label = (row.original as any).status_label || s;
+          if (s === 'confirmed') {
+            return <span className="ew-confirmed" title={label}>CONF</span>;
+          }
+          if (s === 'date_confirmed') {
+            return <span className="ew-tentative" title={label}>DATE</span>;
+          }
+          return <span className="c-muted" title={label}>EST</span>;
         },
       },
     ],

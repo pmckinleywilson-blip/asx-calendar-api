@@ -127,7 +127,8 @@ export default function Home() {
   // KPI stats
   const totalEvents = events.length;
   const confirmedCount = events.filter((e) => e.status === "confirmed").length;
-  const tentativeCount = totalEvents - confirmedCount;
+  const dateConfirmedCount = events.filter((e) => e.status === "date_confirmed").length;
+  const estimatedCount = events.filter((e) => e.status === "estimated").length;
   const withWebcast = events.filter((e) => e.webcast_url).length;
 
   return (
@@ -142,9 +143,15 @@ export default function Home() {
           <strong className="c-green">{confirmedCount}</strong>
         </span>
         <span>
-          TENTATIVE:{" "}
-          <strong className="c-amber">{tentativeCount}</strong>
+          DATE CONFIRMED:{" "}
+          <strong className="c-amber">{dateConfirmedCount}</strong>
         </span>
+        {estimatedCount > 0 && (
+          <span>
+            ESTIMATED:{" "}
+            <strong className="c-muted">{estimatedCount}</strong>
+          </span>
+        )}
         <span>
           WEBCAST: <strong className="c-blue">{withWebcast}</strong>
         </span>
@@ -194,15 +201,14 @@ export default function Home() {
         onTimezoneChange={handleTimezoneChange}
       />
 
-      {/* Tentative warning */}
+      {/* Status legend */}
       <div className="mb-2 px-2 py-1 border-l-2 border-[#9a6700] text-[9px] c-muted bg-[#fffbe6]">
-        <strong className="c-amber">TENTATIVE </strong> events may not have final
-        times or webcast details. Adding individually creates a snapshot that
-        won&apos;t auto-update.{" "}
+        <strong className="c-green">CONFIRMED</strong> = date, time &amp; webcast details available.{" "}
+        <strong className="c-amber">DATE CONFIRMED</strong> = date confirmed, time &amp; webcast TBC.{" "}
         <a href="/subscribe" className="c-blue hover:underline">
           Subscribe
         </a>{" "}
-        for auto-updating invites.
+        for auto-updating invites as details are confirmed.
       </div>
 
       {/* Error */}

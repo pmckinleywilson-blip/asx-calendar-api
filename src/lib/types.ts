@@ -71,7 +71,8 @@ export interface EventItem {
   source: string;
   source_url: string | null;
   ir_verified: boolean;
-  status: 'confirmed' | 'tentative';
+  status: 'confirmed' | 'date_confirmed' | 'estimated';
+  status_label?: string;
   created_at: string;
   updated_at: string;
 }

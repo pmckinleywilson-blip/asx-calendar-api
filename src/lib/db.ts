@@ -66,7 +66,7 @@ export async function initDatabase(): Promise<void> {
       source         TEXT NOT NULL,
       source_url     TEXT,
       ir_verified    BOOLEAN DEFAULT false,
-      status         TEXT DEFAULT 'tentative' CHECK (status IN ('confirmed', 'tentative', 'postponed', 'cancelled')),
+      status         TEXT DEFAULT 'date_confirmed' CHECK (status IN ('confirmed', 'date_confirmed', 'estimated')),
       notified_at    TIMESTAMPTZ,
       created_at     TIMESTAMPTZ DEFAULT NOW(),
       updated_at     TIMESTAMPTZ DEFAULT NOW(),
@@ -77,6 +77,29 @@ export async function initDatabase(): Promise<void> {
   // Add replay_url column to existing tables that predate it
   await sql`
     ALTER TABLE events ADD COLUMN IF NOT EXISTS replay_url TEXT
+  `;
+
+  // Migrate status CHECK constraint to support granular statuses:
+  //   confirmed      = date + time + webcast (ready to attend)
+  //   date_confirmed = date confirmed via IR calendar (time/webcast TBC)
+  //   estimated      = date estimated from prior corresponding period
+  //   tentative      = detected from announcement but unverified
+  //   postponed / cancelled
+  // Migrate status to simplified 3-tier system:
+  //   confirmed      = date + time + webcast (ready to attend)
+  //   date_confirmed = date confirmed via IR or ASX announcement (time/webcast TBC)
+  //   estimated      = date estimated from prior corresponding period
+  await sql`
+    ALTER TABLE events DROP CONSTRAINT IF EXISTS events_status_check
+  `;
+  // Migrate old statuses before adding new constraint
+  await sql`
+    UPDATE events SET status = 'date_confirmed'
+    WHERE status IN ('tentative', 'postponed', 'cancelled')
+  `;
+  await sql`
+    ALTER TABLE events ADD CONSTRAINT events_status_check
+      CHECK (status IN ('confirmed', 'date_confirmed', 'estimated'))
   `;
 }
 
@@ -287,7 +310,7 @@ export interface UpsertEventInput {
   source: string;
   source_url?: string | null;
   ir_verified?: boolean;
-  status?: 'confirmed' | 'tentative' | 'postponed' | 'cancelled';
+  status?: 'confirmed' | 'date_confirmed' | 'estimated';
 }
 
 export interface EventRow {
@@ -436,8 +459,20 @@ export async function upsertEvent(
   const mergedSourceUrl    = existing.source_url === null ? source_url
                            : (higherOrEqual && source_url !== null ? source_url : existing.source_url);
   const mergedIrVerified   = ir_verified ? true : existing.ir_verified;
-  const mergedStatus       = (ir_verified && !existing.ir_verified) ? 'confirmed'
-                           : (higherOrEqual ? status : existing.status);
+
+  // Derive status from the data we actually have after merging.
+  // Status is computed, not stored directly — it reflects what info is available:
+  //   confirmed      = date + time + webcast (ready to attend)
+  //   date_confirmed = date confirmed (from IR page or ASX announcement)
+  //   estimated      = date based on prior corresponding period
+  const mergedStatus = (() => {
+    // If we have a webcast URL and time, it's fully confirmed
+    if (mergedWebcastUrl && mergedEventTime) return 'confirmed';
+    // If either source says estimated and nothing better overrides
+    if (status === 'estimated' && existing.status === 'estimated') return 'estimated';
+    // Any real date source (IR page, ASX announcement) = date_confirmed
+    return 'date_confirmed';
+  })();
 
   const updated = await sql`
     UPDATE events SET
@@ -518,7 +553,7 @@ export async function getEventsFromDB(
   let events = (rows as EventRow[]).filter((e) => {
     if (filters.type && e.event_type !== filters.type) return false;
     if (filters.status && e.status !== filters.status) return false;
-    if (filters.confirmed_only && !(e.ir_verified && e.status === 'confirmed')) return false;
+    if (filters.confirmed_only && e.status !== 'confirmed' && e.status !== 'date_confirmed') return false;
     return true;
   });
 
@@ -547,7 +582,7 @@ export async function getEventByIdFromDB(
 }
 
 /**
- * Get all events that are confirmed, ir_verified, not yet notified,
+ * Get all events that are confirmed or date_confirmed, not yet notified,
  * and with event_date >= today.
  */
 export async function getUnnotifiedConfirmedEvents(): Promise<EventRow[]> {
@@ -556,8 +591,7 @@ export async function getUnnotifiedConfirmedEvents(): Promise<EventRow[]> {
 
   const rows = await sql`
     SELECT * FROM events
-    WHERE ir_verified = true
-      AND status = 'confirmed'
+    WHERE status IN ('confirmed', 'date_confirmed')
       AND notified_at IS NULL
       AND event_date >= CURRENT_DATE
     ORDER BY event_date ASC, event_time ASC NULLS LAST

@@ -184,7 +184,7 @@ async function upsertEvent(sql, event) {
         ${'asx-announcement-llm'},
         ${event.source_url},
         ${false},
-        ${event.confidence === 'high' ? 'confirmed' : 'tentative'},
+        ${(event.webcast_url && event.event_time) ? 'confirmed' : 'date_confirmed'},
         ${new Date().toISOString()}
       )
       ON CONFLICT (ticker, event_date, event_type)

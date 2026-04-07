@@ -47,6 +47,31 @@ jobs:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           INVITE_FROM_EMAIL: ${{ secrets.INVITE_FROM_EMAIL }}
 
+  # Daily digest email — 7am AEST (21:00 UTC prior day) on weekdays
+  daily-digest:
+    runs-on: ubuntu-latest
+    if: github.event.schedule == '17 20 * * *' && github.event_name == 'schedule'
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Send daily digest
+        run: node scripts/daily-digest.js
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          INVITE_FROM_EMAIL: ${{ secrets.INVITE_FROM_EMAIL }}
+
   # Weekly company data refresh (Sunday 6am AEST = Sat 20:17 UTC)
   update-companies:
     runs-on: ubuntu-latest

@@ -136,8 +136,15 @@ function generateIcs(event) {
 // Email formatting helpers
 // ---------------------------------------------------------------------------
 
+function safeDate(eventDate) {
+  // Postgres may return a Date object or a string — normalise to YYYY-MM-DD string
+  if (typeof eventDate === 'string') return eventDate.substring(0, 10);
+  if (eventDate instanceof Date) return eventDate.toISOString().substring(0, 10);
+  return String(eventDate).substring(0, 10);
+}
+
 function formatDate(event) {
-  const d = new Date(event.event_date + 'T00:00:00');
+  const d = new Date(safeDate(event.event_date) + 'T00:00:00');
   const day = d.toLocaleDateString('en-AU', {
     weekday: 'short',
     day: 'numeric',
@@ -281,7 +288,7 @@ async function main() {
 
       // Step 4: Generate ICS content
       const icsContent = generateIcs(event);
-      const icsFilename = event.ticker + '-' + event.event_date.substring(0, 10) + '.ics';
+      const icsFilename = event.ticker + '-' + safeDate(event.event_date) + '.ics';
 
       // Build unsubscribe URL
       const unsubscribeUrl = 'https://asx-calendar-api.vercel.app/api/subscribe?token=' + sub.feed_token + '&action=unsubscribe';

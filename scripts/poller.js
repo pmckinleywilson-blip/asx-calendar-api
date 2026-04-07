@@ -104,7 +104,6 @@ function loadCompanies() {
     var rank = parseInt(fields[rankIdx] || '0', 10);
 
     if (!code || !name) continue;
-    if (rank > 500 && rank !== 0) continue; // All Ords = top 500
 
     companies.push({ code: code, company_name: name, market_cap_rank: rank || 9999 });
   }

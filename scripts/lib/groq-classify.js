@@ -3,12 +3,34 @@
 // Two-pass approach: batch classify titles, then deep extract from content.
 // ============================================================
 
-const Groq = require('groq-sdk');
+const { createClient, getModel, hasDailyTokenLimit } = require('./llm-client');
 
-const MODEL = 'llama-3.3-70b-versatile';
+const MODEL_OVERRIDE = null; // set to override llm-client's default
 const BATCH_SIZE = 25;
 const MAX_RETRIES = 3;
 const GROQ_DELAY_MS = 1000;
+
+// Global flag: once we hit a daily token limit, skip all remaining Groq calls.
+// This prevents the pipeline from burning 45 minutes retrying against a limit
+// that won't reset for hours.
+let _dailyLimitReached = false;
+
+/**
+ * Check if a 429 error is a daily token limit (TPD) vs. a short-term rate limit.
+ * TPD limits won't reset for minutes/hours — retrying is pointless.
+ */
+function isDailyTokenLimit(err) {
+  const msg = err.message || String(err);
+  return msg.includes('tokens per day') || msg.includes('TPD');
+}
+
+/**
+ * Returns true if the daily Groq token budget has been exhausted.
+ * Callers can check this to skip remaining Groq work.
+ */
+function isGroqBudgetExhausted() {
+  return _dailyLimitReached;
+}
 
 // ---------------------------------------------------------------------------
 // Delay helper
@@ -72,9 +94,16 @@ function parseJsonFromLLM(raw) {
 async function callGroq(client, messages, attempt) {
   if (attempt === undefined) attempt = 1;
 
+  // If we already know the daily limit is hit, fail fast
+  if (_dailyLimitReached) {
+    throw new Error('Groq daily token limit reached — skipping');
+  }
+
+  var model = MODEL_OVERRIDE || getModel();
+
   try {
     const completion = await client.chat.completions.create({
-      model: MODEL,
+      model: model,
       temperature: 0,
       messages: messages,
     });
@@ -86,6 +115,13 @@ async function callGroq(client, messages, attempt) {
     return content || '';
   } catch (err) {
     const isRateLimit = err.status === 429 || (err.message && err.message.includes('429'));
+
+    // If it's a DAILY token limit (Groq-specific), don't retry — it won't help for hours
+    if (isRateLimit && hasDailyTokenLimit() && isDailyTokenLimit(err)) {
+      _dailyLimitReached = true;
+      console.log('  [llm] DAILY TOKEN LIMIT reached — aborting all remaining LLM calls');
+      throw err;
+    }
 
     if (attempt < MAX_RETRIES) {
       const backoffMs = isRateLimit
@@ -177,7 +213,7 @@ RULES:
 async function classifyAnnouncements(announcements, groqApiKey) {
   if (!announcements || announcements.length === 0) return [];
 
-  const client = new Groq({ apiKey: groqApiKey });
+  const client = createClient(groqApiKey);
   const relevant = [];
 
   // Split into batches
@@ -271,7 +307,7 @@ async function classifyAnnouncements(announcements, groqApiKey) {
 async function extractEventDetails(announcement, content, groqApiKey) {
   if (!content) return null;
 
-  const client = new Groq({ apiKey: groqApiKey });
+  const client = createClient(groqApiKey);
 
   const userPrompt = [
     'Company: ' + announcement.company_name + ' (ASX: ' + announcement.ticker + ')',
@@ -346,4 +382,5 @@ async function extractEventDetails(announcement, content, groqApiKey) {
 module.exports = {
   classifyAnnouncements: classifyAnnouncements,
   extractEventDetails: extractEventDetails,
+  isGroqBudgetExhausted: isGroqBudgetExhausted,
 };

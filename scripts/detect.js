@@ -11,7 +11,7 @@ const fs = require('fs');
 const path = require('path');
 const { neon } = require('@neondatabase/serverless');
 const { fetchAnnouncements, fetchAnnouncementsForTier, fetchAnnouncementContent } = require('./lib/asx-api');
-const { classifyAnnouncements, extractEventDetails } = require('./lib/groq-classify');
+const { classifyAnnouncements, extractEventDetails, isGroqBudgetExhausted } = require('./lib/groq-classify');
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -225,10 +225,10 @@ async function main() {
   console.log('Started: ' + new Date().toISOString());
   console.log('==========================================================\n');
 
-  // Validate environment
-  const groqApiKey = process.env.GROQ_API_KEY;
+  // Validate environment — accept either OpenRouter or Groq
+  const groqApiKey = process.env.OPENROUTER_API_KEY || process.env.GROQ_API_KEY;
   if (!groqApiKey) {
-    console.error('[detect] FATAL: GROQ_API_KEY not set');
+    console.error('[detect] FATAL: No LLM API key set. Set OPENROUTER_API_KEY or GROQ_API_KEY');
     process.exit(1);
   }
 
@@ -371,6 +371,12 @@ async function main() {
     totalClassified += announcements.length;
     totalRelevant += relevant.length;
 
+    // Abort if Groq daily token budget is exhausted
+    if (isGroqBudgetExhausted()) {
+      console.log('\n[detect] Groq daily token limit reached. Stopping detection to preserve budget for verify step.');
+      break;
+    }
+
     if (relevant.length === 0) {
       console.log('[detect] No relevant announcements found for tier ' + tier + '. Skipping extraction.');
       continue;
@@ -383,6 +389,12 @@ async function main() {
       // Check time budget before each extraction
       if ((Date.now() - startTime) > TIME_BUDGET_MS) {
         console.log('[detect] Time budget reached during extraction. Processed ' + i + '/' + relevant.length + ' announcements.');
+        break;
+      }
+
+      // Check Groq budget before each extraction
+      if (isGroqBudgetExhausted()) {
+        console.log('[detect] Groq daily token limit reached during extraction. Processed ' + i + '/' + relevant.length + ' announcements.');
         break;
       }
 

@@ -17,7 +17,7 @@
 const fs = require('fs');
 const path = require('path');
 const { neon } = require('@neondatabase/serverless');
-const { getIRUrl, scrapeIRPage } = require('./lib/ir-pages');
+const { getIRUrl, scrapeIRPage, isIRDailyLimitReached } = require('./lib/ir-pages');
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -256,9 +256,10 @@ async function main() {
   console.log('==========================================================\n');
 
   // Validate environment
-  var groqApiKey = process.env.GROQ_API_KEY;
+  // Accept either OpenRouter or Groq
+  var groqApiKey = process.env.OPENROUTER_API_KEY || process.env.GROQ_API_KEY;
   if (!groqApiKey) {
-    console.error('[verify] FATAL: GROQ_API_KEY not set');
+    console.error('[verify] FATAL: No LLM API key set. Set OPENROUTER_API_KEY or GROQ_API_KEY');
     process.exit(1);
   }
 
@@ -295,6 +296,12 @@ async function main() {
   console.log('\n[verify] Starting IR page scraping for ' + tickers.length + ' tickers...\n');
 
   for (var i = 0; i < tickers.length; i++) {
+    // Check if Groq daily token budget is exhausted
+    if (isIRDailyLimitReached()) {
+      console.log('\n[verify] Groq daily token limit reached. Stopping after ' + i + '/' + tickers.length + ' tickers.');
+      break;
+    }
+
     var ticker = tickers[i];
     console.log('[' + (i + 1) + '/' + tickers.length + '] ' + ticker);
 

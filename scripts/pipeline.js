@@ -59,15 +59,30 @@ async function main() {
   console.log('');
 
   // Validate minimum required env vars
-  const requiredVars = ['GROQ_API_KEY', 'DATABASE_URL'];
-  const missing = requiredVars.filter(function (v) { return !process.env[v]; });
-  if (missing.length > 0) {
-    console.error('[pipeline] FATAL: Missing required environment variables: ' + missing.join(', '));
+  // DATABASE_URL is always required. LLM key: OPENROUTER_API_KEY or GROQ_API_KEY.
+  if (!process.env.DATABASE_URL) {
+    console.error('[pipeline] FATAL: DATABASE_URL not set');
+    process.exit(1);
+  }
+  if (!process.env.OPENROUTER_API_KEY && !process.env.GROQ_API_KEY) {
+    console.error('[pipeline] FATAL: No LLM API key set. Set OPENROUTER_API_KEY or GROQ_API_KEY');
     process.exit(1);
   }
 
+  // Step 0: Seed estimated events (foundation layer — runs fast, no LLM needed)
+  console.log('[pipeline] ==> Step 0: Estimated Events (PCP-based dates for all companies)');
+  console.log('');
+
+  const estimateScript = path.resolve(__dirname, 'estimate.js');
+  const estimateCode = await runScript(estimateScript);
+
+  if (estimateCode !== 0) {
+    console.error('[pipeline] Estimate script failed with exit code ' + estimateCode);
+    console.log('[pipeline] Continuing to detection step...\n');
+  }
+
   // Step 1: Detection (ASX announcements)
-  console.log('[pipeline] ==> Step 1: Event Detection (ASX Announcements)');
+  console.log('\n[pipeline] ==> Step 1: Event Detection (ASX Announcements)');
   console.log('');
 
   const detectScript = path.resolve(__dirname, 'detect.js');

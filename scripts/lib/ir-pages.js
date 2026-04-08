@@ -8,10 +8,9 @@
 
 const https = require('https');
 const http = require('http');
-const Groq = require('groq-sdk');
+const { createClient, getModel, hasDailyTokenLimit } = require('./llm-client');
 
 const USER_AGENT = 'ASXCalendarAPI/1.0 (events calendar)';
-const MODEL = 'llama-3.3-70b-versatile';
 const MAX_RETRIES = 3;
 const SCRAPE_DELAY_MS = 1000;
 
@@ -200,12 +199,24 @@ function stripHtml(html) {
 // Groq API call with retry and exponential backoff
 // ---------------------------------------------------------------------------
 
+// Track daily token limit for IR page scraping
+var _irDailyLimitReached = false;
+
+function isIRDailyLimitReached() {
+  return _irDailyLimitReached;
+}
+
 async function callGroq(client, messages, attempt) {
   if (attempt === undefined) attempt = 1;
 
+  // Fail fast if daily limit already hit
+  if (_irDailyLimitReached) {
+    throw new Error('Groq daily token limit reached — skipping');
+  }
+
   try {
     var completion = await client.chat.completions.create({
-      model: MODEL,
+      model: getModel(),
       temperature: 0,
       messages: messages,
     });
@@ -217,6 +228,13 @@ async function callGroq(client, messages, attempt) {
     return content || '';
   } catch (err) {
     var isRateLimit = err.status === 429 || (err.message && err.message.includes('429'));
+
+    // Daily token limit (Groq-specific) — don't retry, it won't help for hours
+    if (isRateLimit && hasDailyTokenLimit() && (err.message && (err.message.includes('tokens per day') || err.message.includes('TPD')))) {
+      _irDailyLimitReached = true;
+      console.log('  [ir-pages] DAILY TOKEN LIMIT reached — aborting remaining IR scraping');
+      throw err;
+    }
 
     if (attempt < MAX_RETRIES) {
       var backoffMs = isRateLimit
@@ -361,7 +379,7 @@ async function scrapeIRPage(ticker, groqApiKey) {
 
   // Step 3: Send to Groq for extraction
   var today = new Date().toISOString().substring(0, 10);
-  var client = new Groq({ apiKey: groqApiKey });
+  var client = createClient(groqApiKey);
 
   var userPrompt = 'Company: ' + normalTicker + ' (ASX-listed)\n' +
     'IR Page URL: ' + url + '\n\n' +
@@ -496,5 +514,6 @@ module.exports = {
   getIRUrl: getIRUrl,
   scrapeIRPage: scrapeIRPage,
   scrapeIRPages: scrapeIRPages,
+  isIRDailyLimitReached: isIRDailyLimitReached,
   IR_URLS: IR_URLS,
 };

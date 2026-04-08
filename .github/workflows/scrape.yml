@@ -1,15 +1,17 @@
 name: ASX Event Detection Pipeline
 
 on:
-  # Every 4 hours during AU market hours (6am–10pm AEST, UTC+10)
-  # This ensures we catch announcements before 5+ filings push them past the API cap.
-  # AEST 6am = UTC 20:00 prior day, AEST 10pm = UTC 12:00
+  # Every 4 hours during AU market hours (6am–10pm AEST, UTC+10).
+  # Frequent runs ensure we catch announcements before 5+ filings push them
+  # past the Markit API's 5-item cap. Rate-limit detection in the pipeline
+  # ensures runs abort gracefully when Groq's daily token budget is exhausted,
+  # rather than wasting 45 minutes retrying.
   schedule:
-    - cron: '17 20 * * *'   #  6:17am AEST (pre-market)
-    - cron: '17 0 * * *'    # 10:17am AEST
-    - cron: '17 4 * * *'    #  2:17pm AEST
-    - cron: '17 8 * * *'    #  6:17pm AEST
-    - cron: '17 12 * * *'   # 10:17pm AEST (post-market catch-up)
+    - cron: '17 20 * * 1-5'   #  6:17am AEST weekdays (pre-market)
+    - cron: '17 0 * * 1-5'    # 10:17am AEST
+    - cron: '17 4 * * 1-5'    #  2:17pm AEST
+    - cron: '17 8 * * 1-5'    #  6:17pm AEST
+    - cron: '17 12 * * 1-5'   # 10:17pm AEST (post-market catch-up)
 
   # Manual trigger for testing
   workflow_dispatch:
@@ -44,13 +46,15 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           INVITE_FROM_EMAIL: ${{ secrets.INVITE_FROM_EMAIL }}
 
-  # Daily digest email — 7am AEST (21:00 UTC prior day) on weekdays
+  # Daily digest email — 7am AEST (20:17 UTC prior day) on weekdays
   daily-digest:
     runs-on: ubuntu-latest
-    if: github.event.schedule == '17 20 * * *' && github.event_name == 'schedule'
+    if: github.event.schedule == '17 20 * * 1-5' && github.event_name == 'schedule'
     timeout-minutes: 5
 
     steps:
@@ -72,10 +76,10 @@ jobs:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           INVITE_FROM_EMAIL: ${{ secrets.INVITE_FROM_EMAIL }}
 
-  # Weekly company data refresh (Sunday 6am AEST = Sat 20:17 UTC)
+  # Weekly company data refresh (Monday pre-market only)
   update-companies:
     runs-on: ubuntu-latest
-    if: github.event.schedule == '17 20 * * *' && github.event_name == 'schedule'
+    if: github.event.schedule == '17 20 * * 1-5' && github.event_name == 'schedule'
     timeout-minutes: 10
 
     steps:

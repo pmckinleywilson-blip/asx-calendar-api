@@ -237,10 +237,10 @@ async function callGroq(client, messages, attempt) {
       throw err;
     }
 
-    // Daily token limit (Groq-specific) — don't retry, it won't help for hours
-    if (isRateLimit && hasDailyTokenLimit() && (msg.includes('tokens per day') || msg.includes('TPD'))) {
+    // Daily limit (Groq TPD or OpenRouter free-models-per-day) — don't retry
+    if (isRateLimit && (msg.includes('tokens per day') || msg.includes('TPD') || msg.includes('free-models-per-day'))) {
       _irDailyLimitReached = true;
-      console.log('  [ir-pages] DAILY TOKEN LIMIT reached — aborting remaining IR scraping');
+      console.log('  [ir-pages] DAILY LIMIT reached — aborting remaining IR scraping');
       throw err;
     }
 

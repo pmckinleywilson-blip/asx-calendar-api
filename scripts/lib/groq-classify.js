@@ -8,7 +8,7 @@ const { createClient, getModel, hasDailyTokenLimit } = require('./llm-client');
 const MODEL_OVERRIDE = null; // set to override llm-client's default
 const BATCH_SIZE = 25;
 const MAX_RETRIES = 3;
-const GROQ_DELAY_MS = 1000;
+const GROQ_DELAY_MS = 3000; // 3s between batches — free-tier models have tight per-minute limits
 
 // Global flag: once we hit a daily token limit, skip all remaining Groq calls.
 // This prevents the pipeline from burning 45 minutes retrying against a limit
@@ -16,17 +16,19 @@ const GROQ_DELAY_MS = 1000;
 let _dailyLimitReached = false;
 
 /**
- * Check if a 429 error is a daily token limit (TPD) vs. a short-term rate limit.
- * TPD limits won't reset for minutes/hours — retrying is pointless.
+ * Check if a 429 error is a daily/hard limit vs. a short-term rate limit.
+ * Daily limits won't reset for minutes/hours — retrying is pointless.
+ * Covers both Groq TPD and OpenRouter free-models-per-day.
  */
-function isDailyTokenLimit(err) {
+function isDailyLimit(err) {
   const msg = err.message || String(err);
-  return msg.includes('tokens per day') || msg.includes('TPD');
+  return msg.includes('tokens per day') || msg.includes('TPD') ||
+         msg.includes('free-models-per-day');
 }
 
 /**
- * Returns true if the daily Groq token budget has been exhausted.
- * Callers can check this to skip remaining Groq work.
+ * Returns true if the daily LLM budget has been exhausted.
+ * Callers can check this to skip remaining LLM work.
  */
 function isGroqBudgetExhausted() {
   return _dailyLimitReached;
@@ -124,10 +126,10 @@ async function callGroq(client, messages, attempt) {
       throw err;
     }
 
-    // If it's a DAILY token limit (Groq-specific), don't retry — it won't help for hours
-    if (isRateLimit && hasDailyTokenLimit() && isDailyTokenLimit(err)) {
+    // Daily limit (Groq TPD or OpenRouter free-models-per-day) — don't retry
+    if (isRateLimit && isDailyLimit(err)) {
       _dailyLimitReached = true;
-      console.log('  [llm] DAILY TOKEN LIMIT reached — aborting all remaining LLM calls');
+      console.log('  [llm] DAILY LIMIT reached — aborting all remaining LLM calls');
       throw err;
     }
 
@@ -290,11 +292,23 @@ async function classifyAnnouncements(announcements, groqApiKey) {
         }
       }
     } catch (err) {
-      // On error, treat entire batch as possible to avoid missing events
-      console.log('    Error classifying batch: ' + err.message + ' — treating batch as possible');
-      for (let k = 0; k < batch.length; k++) {
-        batch[k].classification = 'possible';
-        relevant.push(batch[k]);
+      var errMsg = err.message || String(err);
+      var isRateLimitErr = (err.status === 429) || errMsg.includes('429');
+
+      if (isRateLimitErr || _dailyLimitReached) {
+        // Rate limit or daily cap — skip batch entirely (don't flood extraction with doomed calls)
+        console.log('    Rate limited — skipping batch (' + batch.length + ' announcements)');
+        if (_dailyLimitReached) {
+          console.log('    Daily limit reached — skipping all remaining batches');
+          break;
+        }
+      } else {
+        // Non-rate-limit error — treat batch as possible to avoid missing events
+        console.log('    Error classifying batch: ' + errMsg.substring(0, 200) + ' — treating batch as possible');
+        for (let k = 0; k < batch.length; k++) {
+          batch[k].classification = 'possible';
+          relevant.push(batch[k]);
+        }
       }
     }
 

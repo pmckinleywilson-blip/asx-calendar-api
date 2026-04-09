@@ -30,7 +30,7 @@ function detectProvider() {
   if (process.env.OPENROUTER_API_KEY) {
     _provider = 'openrouter';
     // Default model — override with LLM_MODEL env var
-    _model = process.env.LLM_MODEL || 'google/gemma-4-31b-it:free';
+    _model = process.env.LLM_MODEL || 'google/gemma-4-31b-it';
     console.log('[llm] Using OpenRouter (' + _model + ')');
     return _provider;
   }

@@ -8,7 +8,7 @@ const { createClient, getModel, hasDailyTokenLimit } = require('./llm-client');
 const MODEL_OVERRIDE = null; // set to override llm-client's default
 const BATCH_SIZE = 25;
 const MAX_RETRIES = 3;
-const GROQ_DELAY_MS = 3000; // 3s between batches — free-tier models have tight per-minute limits
+const GROQ_DELAY_MS = 1500; // 1.5s between batches — respect per-minute rate limits
 
 // Global flag: once we hit a daily token limit, skip all remaining Groq calls.
 // This prevents the pipeline from burning 45 minutes retrying against a limit

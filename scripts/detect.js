@@ -17,7 +17,7 @@ const { classifyAnnouncements, extractEventDetails, isGroqBudgetExhausted } = re
 // Configuration
 // ---------------------------------------------------------------------------
 
-const GROQ_DELAY_MS = 3000;          // 3s between LLM calls — free-tier per-minute limits
+const GROQ_DELAY_MS = 1500;          // 1.5s between LLM calls — respect per-minute rate limits
 const CONTENT_FETCH_DELAY_MS = 500;
 
 // Global time budget: abort gracefully before the GitHub Actions timeout.

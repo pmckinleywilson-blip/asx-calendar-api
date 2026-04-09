@@ -5,14 +5,9 @@
 //   1. OPENROUTER_API_KEY → OpenRouter (preferred — no daily token caps)
 //   2. GROQ_API_KEY       → Groq (fallback — 100K tokens/day free tier)
 //
-// OpenRouter free models (no cost):
-//   - meta-llama/llama-3.1-8b-instruct:free
-//   - google/gemma-2-9b-it:free
-//   - qwen/qwen-2.5-7b-instruct:free
-//
-// OpenRouter paid models (cheap, ~$0.10-0.30/M tokens):
-//   - meta-llama/llama-3.3-70b-instruct
-//   - google/gemini-flash-1.5
+// OpenRouter uses the `openai` npm package (correct /chat/completions path).
+// Groq uses its own `groq-sdk` package.
+// Both expose the same chat.completions.create() interface.
 //
 // Usage:
 //   const { createClient, getModel } = require('./llm-client');
@@ -51,25 +46,33 @@ function detectProvider() {
 }
 
 /**
- * Create an LLM client. Both Groq SDK and OpenAI SDK share the same
- * chat.completions.create() interface, so callers don't need to change.
+ * Create an LLM client. OpenRouter uses the `openai` package (which sends
+ * requests to /chat/completions). Groq uses `groq-sdk`. Both share the
+ * same chat.completions.create() interface, so callers don't change.
+ *
+ * NOTE: The groq-sdk hardcodes /openai/v1/chat/completions as its path,
+ * which is wrong for OpenRouter (needs /chat/completions). That's why we
+ * use the openai package for OpenRouter instead.
  */
 function createClient(apiKey) {
   var provider = detectProvider();
 
   if (provider === 'openrouter') {
-    // OpenRouter uses the OpenAI-compatible API.
-    // The groq-sdk package also supports custom baseURL, so we can reuse it.
-    var Groq = require('groq-sdk');
-    return new Groq({
+    // OpenRouter uses the standard OpenAI-compatible API at /api/v1.
+    var OpenAI = require('openai');
+    return new OpenAI({
       apiKey: apiKey || process.env.OPENROUTER_API_KEY,
       baseURL: 'https://openrouter.ai/api/v1',
+      defaultHeaders: {
+        'HTTP-Referer': 'https://asx-calendar-api.vercel.app',
+        'X-Title': 'ASX Calendar API',
+      },
     });
   }
 
   // Default: Groq
-  var Groq2 = require('groq-sdk');
-  return new Groq2({ apiKey: apiKey || process.env.GROQ_API_KEY });
+  var Groq = require('groq-sdk');
+  return new Groq({ apiKey: apiKey || process.env.GROQ_API_KEY });
 }
 
 /**

@@ -10,7 +10,7 @@
 // Sleeps outside ASX filing hours (before 7am / after 8pm AEST).
 // Sleeps on weekends.
 //
-// Required env vars: DATABASE_URL, GROQ_API_KEY
+// Required env vars: DATABASE_URL, OPENROUTER_API_KEY (or GROQ_API_KEY)
 // Optional env vars: RESEND_API_KEY, INVITE_FROM_EMAIL
 // Usage: node scripts/poller.js
 // ============================================================
@@ -332,12 +332,12 @@ async function main() {
   console.log('============================================================');
   console.log('');
 
-  // Validate env
+  // Validate env — accept either OpenRouter (preferred) or Groq
   var databaseUrl = process.env.DATABASE_URL;
-  var groqApiKey = process.env.GROQ_API_KEY;
+  var groqApiKey = process.env.OPENROUTER_API_KEY || process.env.GROQ_API_KEY;
 
   if (!databaseUrl) { console.error('FATAL: DATABASE_URL not set'); process.exit(1); }
-  if (!groqApiKey) { console.error('FATAL: GROQ_API_KEY not set'); process.exit(1); }
+  if (!groqApiKey) { console.error('FATAL: No LLM API key set. Set OPENROUTER_API_KEY or GROQ_API_KEY'); process.exit(1); }
 
   var sql = neon(databaseUrl);
 

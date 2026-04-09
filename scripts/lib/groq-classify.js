@@ -114,7 +114,15 @@ async function callGroq(client, messages, attempt) {
 
     return content || '';
   } catch (err) {
-    const isRateLimit = err.status === 429 || (err.message && err.message.includes('429'));
+    var status = err.status || 0;
+    var msg = err.message || String(err);
+    var isRateLimit = status === 429 || msg.includes('429');
+
+    // Non-retryable errors — fail immediately, don't waste time
+    if (status === 404 || status === 401 || status === 403) {
+      console.log('  [llm] Non-retryable error (' + status + ') — check model name and API key');
+      throw err;
+    }
 
     // If it's a DAILY token limit (Groq-specific), don't retry — it won't help for hours
     if (isRateLimit && hasDailyTokenLimit() && isDailyTokenLimit(err)) {
@@ -128,7 +136,7 @@ async function callGroq(client, messages, attempt) {
         ? Math.min(2000 * Math.pow(2, attempt), 30000)
         : 1000 * attempt;
 
-      console.log('  [groq] Retry ' + attempt + '/' + MAX_RETRIES + ' after ' + backoffMs + 'ms — ' + (err.message || err));
+      console.log('  [llm] Retry ' + attempt + '/' + MAX_RETRIES + ' after ' + backoffMs + 'ms — ' + (msg.substring(0, 200)));
       await delay(backoffMs);
       return callGroq(client, messages, attempt + 1);
     }

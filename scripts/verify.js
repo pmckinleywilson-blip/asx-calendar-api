@@ -25,6 +25,12 @@ const { getIRUrl, scrapeIRPage, isIRDailyLimitReached } = require('./lib/ir-page
 
 const SCRAPE_DELAY_MS = 1000;
 
+// Time budget: verify.js runs after detect.js in the pipeline.
+// The GitHub Actions job has a 45-minute timeout, and detect.js uses up to 35 minutes.
+// Verify.js gets whatever is left. Accept a VERIFY_TIME_BUDGET_MS env var from pipeline.js,
+// or default to 8 minutes (leaving buffer for notify.js).
+const TIME_BUDGET_MS = parseInt(process.env.VERIFY_TIME_BUDGET_MS || '0', 10) || 8 * 60 * 1000;
+
 // ---------------------------------------------------------------------------
 // CSV parsing (handles quoted fields with commas)
 // ---------------------------------------------------------------------------
@@ -296,9 +302,16 @@ async function main() {
   console.log('\n[verify] Starting IR page scraping for ' + tickers.length + ' tickers...\n');
 
   for (var i = 0; i < tickers.length; i++) {
+    // Check time budget before each ticker
+    var elapsedMs = Date.now() - startTime;
+    if (elapsedMs > TIME_BUDGET_MS) {
+      console.log('\n[verify] Time budget reached (' + (elapsedMs / 1000).toFixed(0) + 's). Completed ' + i + '/' + tickers.length + ' tickers.');
+      break;
+    }
+
     // Check if Groq daily token budget is exhausted
     if (isIRDailyLimitReached()) {
-      console.log('\n[verify] Groq daily token limit reached. Stopping after ' + i + '/' + tickers.length + ' tickers.');
+      console.log('\n[verify] LLM daily token limit reached. Stopping after ' + i + '/' + tickers.length + ' tickers.');
       break;
     }
 

@@ -227,10 +227,18 @@ async function callGroq(client, messages, attempt) {
 
     return content || '';
   } catch (err) {
-    var isRateLimit = err.status === 429 || (err.message && err.message.includes('429'));
+    var status = err.status || 0;
+    var msg = err.message || String(err);
+    var isRateLimit = status === 429 || msg.includes('429');
+
+    // Non-retryable errors — fail immediately, don't waste time
+    if (status === 404 || status === 401 || status === 403) {
+      console.log('  [ir-pages] Non-retryable error (' + status + ') — check model name and API key');
+      throw err;
+    }
 
     // Daily token limit (Groq-specific) — don't retry, it won't help for hours
-    if (isRateLimit && hasDailyTokenLimit() && (err.message && (err.message.includes('tokens per day') || err.message.includes('TPD')))) {
+    if (isRateLimit && hasDailyTokenLimit() && (msg.includes('tokens per day') || msg.includes('TPD'))) {
       _irDailyLimitReached = true;
       console.log('  [ir-pages] DAILY TOKEN LIMIT reached — aborting remaining IR scraping');
       throw err;
@@ -241,7 +249,7 @@ async function callGroq(client, messages, attempt) {
         ? Math.min(2000 * Math.pow(2, attempt), 30000)
         : 1000 * attempt;
 
-      console.log('  [ir-pages] Retry ' + attempt + '/' + MAX_RETRIES + ' after ' + backoffMs + 'ms — ' + (err.message || err));
+      console.log('  [ir-pages] Retry ' + attempt + '/' + MAX_RETRIES + ' after ' + backoffMs + 'ms — ' + (msg.substring(0, 200)));
       await delay(backoffMs);
       return callGroq(client, messages, attempt + 1);
     }

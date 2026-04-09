@@ -95,8 +95,13 @@ async function main() {
   }
 
   // Step 2: IR Page Verification (highest-priority source)
-  console.log('\n[pipeline] ==> Step 2: IR Page Verification');
+  // Give verify.js a time budget: total 44 minutes minus elapsed, minus 2 min buffer for notify
+  var verifyBudgetMs = Math.max((44 * 60 * 1000) - (Date.now() - startTime) - (2 * 60 * 1000), 60000);
+  console.log('\n[pipeline] ==> Step 2: IR Page Verification (budget: ' + (verifyBudgetMs / 1000).toFixed(0) + 's)');
   console.log('');
+
+  // Pass the time budget to verify.js via env var
+  process.env.VERIFY_TIME_BUDGET_MS = String(verifyBudgetMs);
 
   const verifyScript = path.resolve(__dirname, 'verify.js');
   const verifyCode = await runScript(verifyScript);

@@ -127,7 +127,7 @@ Core table. Unique constraint on `(ticker, event_date, event_type)`. Key fields:
 | `DATABASE_URL` | Vercel, GitHub Secrets, Railway | Neon Postgres connection string |
 | `GROQ_API_KEY` | Vercel, GitHub Secrets, Railway | Groq LLM API key |
 | `OPENROUTER_API_KEY` | GitHub Secrets, Railway | OpenRouter API key (alternative LLM provider) |
-| `LLM_MODEL` | GitHub Secrets | Override default model (e.g. `google/gemma-4-31b-it:free`) |
+| `LLM_MODEL` | GitHub Secrets | Override default model (currently `google/gemma-4-31b-it`) |
 | `RESEND_API_KEY` | Vercel, GitHub Secrets | Email delivery |
 | `INVITE_FROM_EMAIL` | GitHub Secrets | Sender email for calendar invites |
 
@@ -136,12 +136,14 @@ Core table. Unique constraint on `(ticker, event_date, event_type)`. Key fields:
 ## LLM Provider
 
 The pipeline supports two LLM providers via `scripts/lib/llm-client.js`:
-- **Groq** (default): Fast, free tier with daily token limits (~100K tokens/day)
-- **OpenRouter** (preferred): No daily token cap, free models available (Gemma 4 31B)
+- **OpenRouter** (preferred): Uses the `openai` npm package with baseURL `https://openrouter.ai/api/v1`. No daily token cap on paid models. $10 credit balance added April 9, 2026.
+- **Groq** (fallback): Uses `groq-sdk` package. Free tier with daily token limits (~100K tokens/day).
 
 When both keys are set, OpenRouter is preferred. Falls back to Groq if OpenRouter fails.
 
-Current model: `google/gemma-4-31b-it:free` on OpenRouter.
+Current model: `google/gemma-4-31b-it` (paid) on OpenRouter. ~$0.14/M input, ~$0.40/M output tokens. Estimated cost: $1-3/month.
+
+**Important:** The `LLM_MODEL` GitHub Secret overrides the code default. If you change the model in code, also update the secret via `gh secret set LLM_MODEL --body "model-name"`.
 
 ---
 
@@ -167,32 +169,50 @@ Current model: `google/gemma-4-31b-it:free` on OpenRouter.
 
 ---
 
-## Current State (as of April 9, 2026)
+## Current State (as of April 9, 2026 — session 2)
 
 ### Working
 - Website deployed and accessible
 - Database schema created with all tables
 - 1,755 companies loaded
-- Pipeline orchestrator (detect -> verify -> notify)
+- Pipeline orchestrator (detect -> verify -> notify) with time budgets
 - Continuous poller deployed on Railway.app
 - 3-tier status system in DB and frontend
-- OpenRouter + Gemma 4 integration added
-- Estimate.js generates PCP-based events for all companies
+- Estimate.js generates PCP-based events for all companies (~3,500 estimated events in DB)
 - Subscriber ICS calendar feeds
+- **OpenRouter + Gemma 4 integration FIXED** — was broken since setup, now using `openai` npm package
+- **Pipeline completes without timeout** — first successful full run in 42m24s
 
-### Known Issues
-1. **IR scraper finding very few events** — only a handful of companies returning events despite ~88 having IR URLs configured. Failing silently for most. Needs investigation.
-2. **Website showing very few events** — consequence of issue #1 and potentially the pipeline not running successfully end-to-end.
-3. **Hardcoded IR URLs are brittle** — URLs break when companies redesign their sites. Need a more dynamic approach (e.g. Google search for "[company] investor relations financial calendar", or crawling from the company homepage).
-4. **Daily digest email reports success even when runs fail** — needs honest failure alerting so silent failures don't go unnoticed.
-5. **OpenRouter/Gemma integration unverified end-to-end** — was set up but the session froze before confirming it works in production.
-6. **Pipeline runs may be failing silently** — need to check recent GitHub Actions runs and Railway poller logs to confirm what's actually running.
+### Database State (April 9)
+- ~3,500+ total events (almost all `estimated` from estimate.js)
+- 5 `date_confirmed` events from IR scraper (WBC found 3, a couple others)
+- 2 events from ASX announcements (TR8, KYP)
+- **0 `confirmed` events** — no webcast URLs in any event yet
+- Root cause: LLM pipeline was broken until this session (see below)
+
+### What Was Fixed This Session
+1. **OpenRouter integration (critical).** The `groq-sdk` hardcodes `/openai/v1/chat/completions` as its API path. With OpenRouter baseURL, this produced `https://openrouter.ai/api/v1/openai/v1/chat/completions` → 404. Switched to the `openai` npm package which uses the correct `/chat/completions` path.
+2. **Pipeline timeout kills.** detect.js burned 35 min retrying 404s, leaving verify.js only 10 min before the 45-min timeout killed it. Fixed with: fail-fast on 404/401/403 (no retry), time budget for verify.js, and pipeline.js passes remaining budget.
+3. **Rate limit handling.** Classification failures on rate limit were treating ALL announcements as "possible", flooding extraction with doomed calls. Now: skip batches on rate limit, detect OpenRouter per-day limit and abort early.
+4. **Poller OpenRouter support.** poller.js now accepts `OPENROUTER_API_KEY` in addition to `GROQ_API_KEY`.
+5. **Switched to paid Gemma 4 31B model.** Free-tier daily request cap was too low (~50 requests). Added $10 credits to OpenRouter and switched from `google/gemma-4-31b-it:free` to `google/gemma-4-31b-it` (paid, ~$1-3/month). Updated both the code default AND the `LLM_MODEL` GitHub Secret (the secret overrides code).
+
+### Remaining Issues
+1. **Hardcoded IR URLs are brittle** — URLs break when companies redesign their sites. Need a more dynamic approach.
+2. **Daily digest email reports success even when runs fail** — needs honest failure alerting.
+3. **Railway poller needs env var updates** — `OPENROUTER_API_KEY` and possibly `LLM_MODEL` need to be added in the Railway dashboard. May also need a manual redeploy to pick up the code fix.
+### First Successful Pipeline Run (paid model)
+- **Date:** April 9, 2026
+- **Duration:** 43m34s (within 45-min timeout)
+- detect.js: 392 announcements classified → 72 flagged → **3 events detected** (earnings)
+- verify.js: 16/44 IR pages scraped → **4 events found** (earnings with dates)
+- **7 new events written to DB in a single run**
+- No rate limit errors, no daily cap issues
 
 ### Open Questions
-- Is the Railway poller currently running and healthy?
-- Are GitHub Actions pipeline runs succeeding?
-- How many events are actually in the database right now?
-- Is OpenRouter being used, or is everything still hitting Groq (with its daily limits)?
+- Does Railway auto-deploy from master, or does it need a manual trigger?
+- What's the actual monthly OpenRouter cost once the pipeline is running on schedule?
+- Can the pipeline process all tiers + full IR verification within 45 minutes? (Currently only gets through 1 of 2 tiers + 16/44 IR tickers)
 
 ---
 
@@ -207,6 +227,9 @@ Current model: `google/gemma-4-31b-it:free` on OpenRouter.
 | Reasoning-first LLM prompts | Keyword matching misses context (e.g. trading halts that precede webcasts). The LLM reasons about what the announcement could contain. |
 | Primary sources only | We are the aggregator. Using third-party data providers defeats the purpose. ASX API + company IR pages only. |
 | Deduplication by documentKey | Avoids re-processing the same announcement every sweep. Only genuinely new (never-seen-before) announcements go through the LLM. |
+| `openai` package for OpenRouter, `groq-sdk` for Groq | The groq-sdk hardcodes `/openai/v1/` in its API path, which breaks non-Groq providers. The `openai` package uses the standard `/chat/completions` path and works with any OpenAI-compatible API. |
+| Fail-fast on 404/401/403 | These HTTP errors mean "model doesn't exist" or "bad auth" — retrying wastes minutes per call and compounds across hundreds of companies. |
+| Time budget for verify.js | Pipeline runs detect → verify → notify sequentially. Without a budget, verify.js can be killed mid-run by the GitHub Actions timeout, producing no results. |
 
 ---
 

@@ -13,7 +13,6 @@
     "@tanstack/react-table": "^8.21.3",
     "csv-parse": "^6.2.1",
     "dotenv": "^17.4.1",
-    "groq-sdk": "^1.1.2",
     "next": "16.2.2",
     "openai": "^6.34.0",
     "react": "19.2.4",

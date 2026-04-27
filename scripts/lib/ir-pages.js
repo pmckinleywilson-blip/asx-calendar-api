@@ -196,7 +196,7 @@ function stripHtml(html) {
 }
 
 // ---------------------------------------------------------------------------
-// Groq API call with retry and exponential backoff
+// LLM API call with retry and exponential backoff
 // ---------------------------------------------------------------------------
 
 // Track daily token limit for IR page scraping
@@ -206,12 +206,12 @@ function isIRDailyLimitReached() {
   return _irDailyLimitReached;
 }
 
-async function callGroq(client, messages, attempt) {
+async function callLLM(client, messages, attempt) {
   if (attempt === undefined) attempt = 1;
 
   // Fail fast if daily limit already hit
   if (_irDailyLimitReached) {
-    throw new Error('Groq daily token limit reached — skipping');
+    throw new Error('LLM daily token limit reached — skipping');
   }
 
   try {
@@ -237,7 +237,7 @@ async function callGroq(client, messages, attempt) {
       throw err;
     }
 
-    // Daily limit (Groq TPD or OpenRouter free-models-per-day) — don't retry
+    // Daily limit (OpenRouter free-models-per-day) — don't retry
     if (isRateLimit && (msg.includes('tokens per day') || msg.includes('TPD') || msg.includes('free-models-per-day'))) {
       _irDailyLimitReached = true;
       console.log('  [ir-pages] DAILY LIMIT reached — aborting remaining IR scraping');
@@ -251,7 +251,7 @@ async function callGroq(client, messages, attempt) {
 
       console.log('  [ir-pages] Retry ' + attempt + '/' + MAX_RETRIES + ' after ' + backoffMs + 'ms — ' + (msg.substring(0, 200)));
       await delay(backoffMs);
-      return callGroq(client, messages, attempt + 1);
+      return callLLM(client, messages, attempt + 1);
     }
 
     throw err;
@@ -358,7 +358,7 @@ function getIRUrl(ticker) {
 // scrapeIRPage — Scrape a single company's IR page and extract events
 // ---------------------------------------------------------------------------
 
-async function scrapeIRPage(ticker, groqApiKey) {
+async function scrapeIRPage(ticker, llmApiKey) {
   var normalTicker = ticker.toUpperCase().trim();
   var url = getIRUrl(normalTicker);
 
@@ -385,9 +385,9 @@ async function scrapeIRPage(ticker, groqApiKey) {
   }
   text = text.substring(0, 8000);
 
-  // Step 3: Send to Groq for extraction
+  // Step 3: Send to LLM for extraction
   var today = new Date().toISOString().substring(0, 10);
-  var client = createClient(groqApiKey);
+  var client = createClient(llmApiKey);
 
   var userPrompt = 'Company: ' + normalTicker + ' (ASX-listed)\n' +
     'IR Page URL: ' + url + '\n\n' +
@@ -397,12 +397,12 @@ async function scrapeIRPage(ticker, groqApiKey) {
 
   var raw;
   try {
-    raw = await callGroq(client, [
+    raw = await callLLM(client, [
       { role: 'system', content: buildIRSystemPrompt(today) },
       { role: 'user', content: userPrompt },
     ]);
   } catch (err) {
-    console.log('  [ir-pages] Groq extraction failed for ' + normalTicker + ': ' + err.message);
+    console.log('  [ir-pages] LLM extraction failed for ' + normalTicker + ': ' + err.message);
     return [];
   }
 
@@ -414,7 +414,7 @@ async function scrapeIRPage(ticker, groqApiKey) {
     if (parsed && typeof parsed === 'object' && parsed.event_date) {
       parsed = [parsed];
     } else {
-      console.log('  [ir-pages] Could not parse Groq response for ' + normalTicker);
+      console.log('  [ir-pages] Could not parse LLM response for ' + normalTicker);
       return [];
     }
   }
@@ -480,7 +480,7 @@ async function scrapeIRPage(ticker, groqApiKey) {
 // scrapeIRPages — Batch process multiple tickers with polite delays
 // ---------------------------------------------------------------------------
 
-async function scrapeIRPages(tickers, groqApiKey) {
+async function scrapeIRPages(tickers, llmApiKey) {
   if (!tickers || tickers.length === 0) return [];
 
   var allEvents = [];
@@ -498,7 +498,7 @@ async function scrapeIRPages(tickers, groqApiKey) {
       continue;
     }
 
-    var events = await scrapeIRPage(ticker, groqApiKey);
+    var events = await scrapeIRPage(ticker, llmApiKey);
     for (var j = 0; j < events.length; j++) {
       allEvents.push(events[j]);
     }

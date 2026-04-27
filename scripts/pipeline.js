@@ -3,7 +3,7 @@
 // Runs detect.js, verify.js, then notify.js in sequence.
 // Captures output and exit codes. Suitable for GitHub Actions.
 //
-// Required env vars: GROQ_API_KEY, DATABASE_URL, RESEND_API_KEY, INVITE_FROM_EMAIL
+// Required env vars: OPENROUTER_API_KEY, DATABASE_URL, RESEND_API_KEY, INVITE_FROM_EMAIL
 // Usage: node scripts/pipeline.js
 // ============================================================
 
@@ -59,13 +59,12 @@ async function main() {
   console.log('');
 
   // Validate minimum required env vars
-  // DATABASE_URL is always required. LLM key: OPENROUTER_API_KEY or GROQ_API_KEY.
   if (!process.env.DATABASE_URL) {
     console.error('[pipeline] FATAL: DATABASE_URL not set');
     process.exit(1);
   }
-  if (!process.env.OPENROUTER_API_KEY && !process.env.GROQ_API_KEY) {
-    console.error('[pipeline] FATAL: No LLM API key set. Set OPENROUTER_API_KEY or GROQ_API_KEY');
+  if (!process.env.OPENROUTER_API_KEY) {
+    console.error('[pipeline] FATAL: OPENROUTER_API_KEY not set');
     process.exit(1);
   }
 

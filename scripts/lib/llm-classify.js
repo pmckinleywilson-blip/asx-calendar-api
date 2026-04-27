@@ -1,16 +1,16 @@
 // ============================================================
-// Groq LLM Classification and Extraction
+// LLM Classification and Extraction (OpenRouter)
 // Two-pass approach: batch classify titles, then deep extract from content.
 // ============================================================
 
-const { createClient, getModel, hasDailyTokenLimit } = require('./llm-client');
+const { createClient, getModel } = require('./llm-client');
 
 const MODEL_OVERRIDE = null; // set to override llm-client's default
 const BATCH_SIZE = 25;
 const MAX_RETRIES = 3;
-const GROQ_DELAY_MS = 1500; // 1.5s between batches — respect per-minute rate limits
+const LLM_DELAY_MS = 1500; // 1.5s between batches — respect per-minute rate limits
 
-// Global flag: once we hit a daily token limit, skip all remaining Groq calls.
+// Global flag: once we hit a daily token limit, skip all remaining LLM calls.
 // This prevents the pipeline from burning 45 minutes retrying against a limit
 // that won't reset for hours.
 let _dailyLimitReached = false;
@@ -18,19 +18,17 @@ let _dailyLimitReached = false;
 /**
  * Check if a 429 error is a daily/hard limit vs. a short-term rate limit.
  * Daily limits won't reset for minutes/hours — retrying is pointless.
- * Covers both Groq TPD and OpenRouter free-models-per-day.
  */
 function isDailyLimit(err) {
   const msg = err.message || String(err);
-  return msg.includes('tokens per day') || msg.includes('TPD') ||
-         msg.includes('free-models-per-day');
+  return msg.includes('tokens per day') || msg.includes('free-models-per-day');
 }
 
 /**
  * Returns true if the daily LLM budget has been exhausted.
  * Callers can check this to skip remaining LLM work.
  */
-function isGroqBudgetExhausted() {
+function isLLMBudgetExhausted() {
   return _dailyLimitReached;
 }
 
@@ -90,15 +88,15 @@ function parseJsonFromLLM(raw) {
 }
 
 // ---------------------------------------------------------------------------
-// Groq API call with retry and exponential backoff
+// LLM API call with retry and exponential backoff
 // ---------------------------------------------------------------------------
 
-async function callGroq(client, messages, attempt) {
+async function callLLM(client, messages, attempt) {
   if (attempt === undefined) attempt = 1;
 
   // If we already know the daily limit is hit, fail fast
   if (_dailyLimitReached) {
-    throw new Error('Groq daily token limit reached — skipping');
+    throw new Error('LLM daily token limit reached — skipping');
   }
 
   var model = MODEL_OVERRIDE || getModel();
@@ -126,7 +124,7 @@ async function callGroq(client, messages, attempt) {
       throw err;
     }
 
-    // Daily limit (Groq TPD or OpenRouter free-models-per-day) — don't retry
+    // Daily limit (OpenRouter free-models-per-day) — don't retry
     if (isRateLimit && isDailyLimit(err)) {
       _dailyLimitReached = true;
       console.log('  [llm] DAILY LIMIT reached — aborting all remaining LLM calls');
@@ -140,7 +138,7 @@ async function callGroq(client, messages, attempt) {
 
       console.log('  [llm] Retry ' + attempt + '/' + MAX_RETRIES + ' after ' + backoffMs + 'ms — ' + (msg.substring(0, 200)));
       await delay(backoffMs);
-      return callGroq(client, messages, attempt + 1);
+      return callLLM(client, messages, attempt + 1);
     }
 
     throw err;
@@ -217,13 +215,13 @@ RULES:
 6. Return ONLY JSON, no markdown or explanation`;
 
 // ---------------------------------------------------------------------------
-// classifyAnnouncements — Batch classify announcement titles via Groq
+// classifyAnnouncements — Batch classify announcement titles via LLM
 // ---------------------------------------------------------------------------
 
-async function classifyAnnouncements(announcements, groqApiKey) {
+async function classifyAnnouncements(announcements, llmApiKey) {
   if (!announcements || announcements.length === 0) return [];
 
-  const client = createClient(groqApiKey);
+  const client = createClient(llmApiKey);
   const relevant = [];
 
   // Split into batches
@@ -232,11 +230,11 @@ async function classifyAnnouncements(announcements, groqApiKey) {
     batches.push(announcements.slice(i, i + BATCH_SIZE));
   }
 
-  console.log('[groq] Classifying ' + announcements.length + ' announcements in ' + batches.length + ' batch(es)');
+  console.log('[llm] Classifying ' + announcements.length + ' announcements in ' + batches.length + ' batch(es)');
 
   for (let b = 0; b < batches.length; b++) {
     const batch = batches[b];
-    console.log('  [groq] Batch ' + (b + 1) + '/' + batches.length + ' (' + batch.length + ' items)');
+    console.log('  [llm] Batch ' + (b + 1) + '/' + batches.length + ' (' + batch.length + ' items)');
 
     // Build the list of announcements for the prompt — include all metadata
     // so the LLM can reason holistically about each announcement
@@ -252,7 +250,7 @@ async function classifyAnnouncements(announcements, groqApiKey) {
     const userPrompt = 'Classify these ASX announcements:\n\n' + lines.join('\n');
 
     try {
-      const raw = await callGroq(client, [
+      const raw = await callLLM(client, [
         { role: 'system', content: CLASSIFY_SYSTEM_PROMPT },
         { role: 'user', content: userPrompt },
       ]);
@@ -314,11 +312,11 @@ async function classifyAnnouncements(announcements, groqApiKey) {
 
     // Delay between batches
     if (b < batches.length - 1) {
-      await delay(GROQ_DELAY_MS);
+      await delay(LLM_DELAY_MS);
     }
   }
 
-  console.log('[groq] Classification complete: ' + relevant.length + '/' + announcements.length + ' announcements flagged for deep extraction');
+  console.log('[llm] Classification complete: ' + relevant.length + '/' + announcements.length + ' announcements flagged for deep extraction');
   return relevant;
 }
 
@@ -326,10 +324,10 @@ async function classifyAnnouncements(announcements, groqApiKey) {
 // extractEventDetails — Deep extraction from one announcement's full content
 // ---------------------------------------------------------------------------
 
-async function extractEventDetails(announcement, content, groqApiKey) {
+async function extractEventDetails(announcement, content, llmApiKey) {
   if (!content) return null;
 
-  const client = createClient(groqApiKey);
+  const client = createClient(llmApiKey);
 
   const userPrompt = [
     'Company: ' + announcement.company_name + ' (ASX: ' + announcement.ticker + ')',
@@ -342,7 +340,7 @@ async function extractEventDetails(announcement, content, groqApiKey) {
   ].join('\n');
 
   try {
-    const raw = await callGroq(client, [
+    const raw = await callLLM(client, [
       { role: 'system', content: EXTRACT_SYSTEM_PROMPT },
       { role: 'user', content: userPrompt },
     ]);
@@ -350,7 +348,7 @@ async function extractEventDetails(announcement, content, groqApiKey) {
     const parsed = parseJsonFromLLM(raw);
 
     if (!parsed || typeof parsed !== 'object') {
-      console.log('    [groq] Warning: could not parse extraction response for ' + announcement.ticker + ' — ' + announcement.title);
+      console.log('    [llm] Warning: could not parse extraction response for ' + announcement.ticker + ' — ' + announcement.title);
       return null;
     }
 
@@ -359,7 +357,7 @@ async function extractEventDetails(announcement, content, groqApiKey) {
 
     // Validate required fields
     if (!parsed.event_date || !/^\d{4}-\d{2}-\d{2}$/.test(parsed.event_date)) {
-      console.log('    [groq] Warning: invalid event_date for ' + announcement.ticker + ': ' + parsed.event_date);
+      console.log('    [llm] Warning: invalid event_date for ' + announcement.ticker + ': ' + parsed.event_date);
       return null;
     }
 
@@ -392,7 +390,7 @@ async function extractEventDetails(announcement, content, groqApiKey) {
       classification: announcement.classification || 'relevant',
     };
   } catch (err) {
-    console.log('    [groq] Error extracting from ' + announcement.ticker + ' — ' + announcement.title + ': ' + err.message);
+    console.log('    [llm] Error extracting from ' + announcement.ticker + ' — ' + announcement.title + ': ' + err.message);
     return null;
   }
 }
@@ -404,5 +402,5 @@ async function extractEventDetails(announcement, content, groqApiKey) {
 module.exports = {
   classifyAnnouncements: classifyAnnouncements,
   extractEventDetails: extractEventDetails,
-  isGroqBudgetExhausted: isGroqBudgetExhausted,
+  isLLMBudgetExhausted: isLLMBudgetExhausted,
 };

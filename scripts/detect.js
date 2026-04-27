@@ -1,9 +1,9 @@
 // ============================================================
 // Event Detection Pipeline
 // Scans ASX announcements and extracts teleconference/webcast events
-// using a two-pass LLM approach via Groq.
+// using a two-pass LLM approach via OpenRouter.
 //
-// Required env vars: GROQ_API_KEY, DATABASE_URL
+// Required env vars: OPENROUTER_API_KEY, DATABASE_URL
 // Usage: node scripts/detect.js
 // ============================================================
 
@@ -11,13 +11,13 @@ const fs = require('fs');
 const path = require('path');
 const { neon } = require('@neondatabase/serverless');
 const { fetchAnnouncements, fetchAnnouncementsForTier, fetchAnnouncementContent } = require('./lib/asx-api');
-const { classifyAnnouncements, extractEventDetails, isGroqBudgetExhausted } = require('./lib/groq-classify');
+const { classifyAnnouncements, extractEventDetails, isLLMBudgetExhausted } = require('./lib/llm-classify');
 
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
 
-const GROQ_DELAY_MS = 1500;          // 1.5s between LLM calls — respect per-minute rate limits
+const LLM_DELAY_MS = 1500;        // 1.5s between LLM calls — respect per-minute rate limits
 const CONTENT_FETCH_DELAY_MS = 500;
 
 // Global time budget: abort gracefully before the GitHub Actions timeout.
@@ -225,10 +225,10 @@ async function main() {
   console.log('Started: ' + new Date().toISOString());
   console.log('==========================================================\n');
 
-  // Validate environment — accept either OpenRouter or Groq
-  const groqApiKey = process.env.OPENROUTER_API_KEY || process.env.GROQ_API_KEY;
-  if (!groqApiKey) {
-    console.error('[detect] FATAL: No LLM API key set. Set OPENROUTER_API_KEY or GROQ_API_KEY');
+  // Validate environment
+  const llmApiKey = process.env.OPENROUTER_API_KEY;
+  if (!llmApiKey) {
+    console.error('[detect] FATAL: OPENROUTER_API_KEY not set');
     process.exit(1);
   }
 
@@ -301,7 +301,7 @@ async function main() {
         if (anns.length === 0) continue;
 
         // Classify and extract inline (skip batching for priority companies)
-        const relevant = await classifyAnnouncements(anns, groqApiKey);
+        const relevant = await classifyAnnouncements(anns, llmApiKey);
         totalClassified += anns.length;
         totalRelevant += relevant.length;
 
@@ -310,8 +310,8 @@ async function main() {
           const content = await fetchAnnouncementContent(ann.url);
           if (!content) continue;
 
-          await delay(GROQ_DELAY_MS);
-          const event = await extractEventDetails(ann, content, groqApiKey);
+          await delay(LLM_DELAY_MS);
+          const event = await extractEventDetails(ann, content, llmApiKey);
           if (!event) continue;
 
           totalEventsDetected++;
@@ -364,16 +364,16 @@ async function main() {
       continue;
     }
 
-    // Step 4: Batch classify with Groq
+    // Step 4: Batch classify with LLM
     console.log('\n[detect] Pass 1: Classifying ' + announcements.length + ' announcements...');
-    const relevant = await classifyAnnouncements(announcements, groqApiKey);
+    const relevant = await classifyAnnouncements(announcements, llmApiKey);
 
     totalClassified += announcements.length;
     totalRelevant += relevant.length;
 
-    // Abort if Groq daily token budget is exhausted
-    if (isGroqBudgetExhausted()) {
-      console.log('\n[detect] Groq daily token limit reached. Stopping detection to preserve budget for verify step.');
+    // Abort if LLM daily token budget is exhausted
+    if (isLLMBudgetExhausted()) {
+      console.log('\n[detect] LLM daily token limit reached. Stopping detection to preserve budget for verify step.');
       break;
     }
 
@@ -392,9 +392,9 @@ async function main() {
         break;
       }
 
-      // Check Groq budget before each extraction
-      if (isGroqBudgetExhausted()) {
-        console.log('[detect] Groq daily token limit reached during extraction. Processed ' + i + '/' + relevant.length + ' announcements.');
+      // Check LLM budget before each extraction
+      if (isLLMBudgetExhausted()) {
+        console.log('[detect] LLM daily token limit reached during extraction. Processed ' + i + '/' + relevant.length + ' announcements.');
         break;
       }
 
@@ -409,11 +409,11 @@ async function main() {
         continue;
       }
 
-      // Wait before calling Groq
-      await delay(GROQ_DELAY_MS);
+      // Wait before calling LLM
+      await delay(LLM_DELAY_MS);
 
       // Extract event details
-      const event = await extractEventDetails(ann, content, groqApiKey);
+      const event = await extractEventDetails(ann, content, llmApiKey);
 
       if (!event) {
         console.log('    No event found');

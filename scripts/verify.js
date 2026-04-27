@@ -10,7 +10,7 @@
 //   ASX 51-100: Mon / Wed / Fri
 //   ASX 101-200: Mon / Thu
 //
-// Required env vars: GROQ_API_KEY, DATABASE_URL
+// Required env vars: OPENROUTER_API_KEY, DATABASE_URL
 // Usage: node scripts/verify.js
 // ============================================================
 
@@ -262,10 +262,9 @@ async function main() {
   console.log('==========================================================\n');
 
   // Validate environment
-  // Accept either OpenRouter or Groq
-  var groqApiKey = process.env.OPENROUTER_API_KEY || process.env.GROQ_API_KEY;
-  if (!groqApiKey) {
-    console.error('[verify] FATAL: No LLM API key set. Set OPENROUTER_API_KEY or GROQ_API_KEY');
+  var llmApiKey = process.env.OPENROUTER_API_KEY;
+  if (!llmApiKey) {
+    console.error('[verify] FATAL: OPENROUTER_API_KEY not set');
     process.exit(1);
   }
 
@@ -309,7 +308,7 @@ async function main() {
       break;
     }
 
-    // Check if Groq daily token budget is exhausted
+    // Check if LLM daily token budget is exhausted
     if (isIRDailyLimitReached()) {
       console.log('\n[verify] LLM daily token limit reached. Stopping after ' + i + '/' + tickers.length + ' tickers.');
       break;
@@ -319,7 +318,7 @@ async function main() {
     console.log('[' + (i + 1) + '/' + tickers.length + '] ' + ticker);
 
     try {
-      var events = await scrapeIRPage(ticker, groqApiKey);
+      var events = await scrapeIRPage(ticker, llmApiKey);
       totalScraped++;
 
       if (events.length === 0) {

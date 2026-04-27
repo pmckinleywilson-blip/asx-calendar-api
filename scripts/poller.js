@@ -3,14 +3,13 @@
 //
 // Sweeps all 500 ASX All Ords companies every ~5 seconds,
 // deduplicates against seen_announcements table, and sends
-// only genuinely new announcements through the full Groq
-// reasoning pipeline.
+// only genuinely new announcements through the LLM reasoning pipeline.
 //
 // Designed to run as a persistent process on Railway.app (free tier).
 // Sleeps outside ASX filing hours (before 7am / after 8pm AEST).
 // Sleeps on weekends.
 //
-// Required env vars: DATABASE_URL, OPENROUTER_API_KEY (or GROQ_API_KEY)
+// Required env vars: DATABASE_URL, OPENROUTER_API_KEY
 // Optional env vars: RESEND_API_KEY, INVITE_FROM_EMAIL
 // Usage: node scripts/poller.js
 // ============================================================
@@ -19,7 +18,7 @@ const fs = require('fs');
 const path = require('path');
 const { neon } = require('@neondatabase/serverless');
 const { fetchAnnouncements } = require('./lib/asx-api');
-const { classifyAnnouncements, extractEventDetails } = require('./lib/groq-classify');
+const { classifyAnnouncements, extractEventDetails } = require('./lib/llm-classify');
 const { fetchAnnouncementContent } = require('./lib/asx-api');
 
 // ---------------------------------------------------------------------------
@@ -28,7 +27,7 @@ const { fetchAnnouncementContent } = require('./lib/asx-api');
 
 const CONCURRENCY = 50;          // API calls in parallel per batch
 const SWEEP_PAUSE_MS = 2000;     // Pause between full sweeps
-const GROQ_DELAY_MS = 1000;      // Delay between Groq calls
+const LLM_DELAY_MS = 1000;       // Delay between LLM calls
 const BATCH_DELAY_MS = 200;      // Delay between concurrent batches
 const CLEANUP_INTERVAL_H = 24;   // Hours between seen_announcements cleanup
 const SEEN_RETENTION_DAYS = 90;  // Keep seen IDs for 90 days
@@ -282,16 +281,16 @@ async function sweep(companies, seenKeys, sql) {
 }
 
 // ---------------------------------------------------------------------------
-// Process new announcements through the Groq reasoning pipeline
+// Process new announcements through the LLM reasoning pipeline
 // ---------------------------------------------------------------------------
 
-async function processNewAnnouncements(newAnns, sql, groqApiKey) {
+async function processNewAnnouncements(newAnns, sql, llmApiKey) {
   if (newAnns.length === 0) return { classified: 0, extracted: 0, upserted: 0 };
 
   var stats = { classified: newAnns.length, extracted: 0, upserted: 0 };
 
-  // Step 1: Classify — let Groq reason about which are event-related
-  var relevant = await classifyAnnouncements(newAnns, groqApiKey);
+  // Step 1: Classify — let LLM reason about which are event-related
+  var relevant = await classifyAnnouncements(newAnns, llmApiKey);
 
   if (relevant.length === 0) return stats;
 
@@ -302,9 +301,9 @@ async function processNewAnnouncements(newAnns, sql, groqApiKey) {
     var content = await fetchAnnouncementContent(ann.url);
     if (!content) continue;
 
-    await delay(GROQ_DELAY_MS);
+    await delay(LLM_DELAY_MS);
 
-    var event = await extractEventDetails(ann, content, groqApiKey);
+    var event = await extractEventDetails(ann, content, llmApiKey);
     if (!event) continue;
 
     stats.extracted++;
@@ -332,12 +331,12 @@ async function main() {
   console.log('============================================================');
   console.log('');
 
-  // Validate env — accept either OpenRouter (preferred) or Groq
+  // Validate env
   var databaseUrl = process.env.DATABASE_URL;
-  var groqApiKey = process.env.OPENROUTER_API_KEY || process.env.GROQ_API_KEY;
+  var llmApiKey = process.env.OPENROUTER_API_KEY;
 
   if (!databaseUrl) { console.error('FATAL: DATABASE_URL not set'); process.exit(1); }
-  if (!groqApiKey) { console.error('FATAL: No LLM API key set. Set OPENROUTER_API_KEY or GROQ_API_KEY'); process.exit(1); }
+  if (!llmApiKey) { console.error('FATAL: OPENROUTER_API_KEY not set'); process.exit(1); }
 
   var sql = neon(databaseUrl);
 
@@ -425,8 +424,8 @@ async function main() {
       }
       await markSeen(sql, newAnns);
 
-      // Process through Groq reasoning pipeline
-      var stats = await processNewAnnouncements(newAnns, sql, groqApiKey);
+      // Process through LLM reasoning pipeline
+      var stats = await processNewAnnouncements(newAnns, sql, llmApiKey);
       totalEvents += stats.upserted;
 
       if (stats.upserted > 0) {

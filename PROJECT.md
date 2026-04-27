@@ -216,6 +216,50 @@ Current model: `google/gemma-4-31b-it` (paid) on OpenRouter. ~$0.14/M input, ~$0
 
 ---
 
+## Suggested Next Steps (priority order)
+
+### 1. Get Railway poller working (high — it's deployed but broken)
+The poller code now supports OpenRouter, but the Railway deployment needs env var updates:
+- Add `OPENROUTER_API_KEY` in the Railway dashboard
+- Add `LLM_MODEL=google/gemma-4-31b-it` in the Railway dashboard
+- Confirm Railway auto-deploys from master, or trigger a manual redeploy
+- Check poller logs after deploy to confirm it's classifying announcements
+
+The poller is the key to 100% announcement coverage (the scheduled pipeline only catches what's in the ASX API's 5-item window at scan time). Without it, we miss announcements on busy filing days.
+
+### 2. Pipeline speed — fit all tiers + IR into 45 minutes (high)
+Currently the pipeline only processes 1 of 2 scheduled tiers and 16/44 IR tickers before hitting the time budget. Options:
+- **Increase GitHub Actions timeout** to 60 minutes (simple, but burns more CI minutes)
+- **Parallelize LLM calls** — batch 3-5 concurrent classification requests instead of serial (biggest win, OpenRouter handles concurrent requests fine)
+- **Split tiers across runs** — run ASX100 at one cron time, ASX101-300 at another, so each run has fewer companies
+- **Reduce extraction delay** from 1.5s to 500ms for paid model (paid tier has higher rate limits)
+- **Skip already-seen announcements in detect.js** — the poller's `seen_announcements` table could be reused to avoid re-classifying announcements the poller already processed
+
+### 3. Dynamic IR URL discovery (medium — current URLs are breaking)
+~88 hardcoded IR URLs in `ir-pages.js` break when companies redesign their sites. Approaches:
+- **Google Custom Search API** — search `"[company name] investor relations financial calendar"` and cache the top result. Free tier: 100 queries/day.
+- **Crawl from company homepage** — fetch the company's main website, use the LLM to find the IR/financial calendar link. More robust than hardcoded URLs.
+- **ASX company page as anchor** — every ASX-listed company has a page at `asx.com.au/asx/share-price-research/company/[TICKER]` which often links to the company website. Start there.
+
+### 4. Honest failure alerting (medium)
+The daily digest and pipeline currently report success even when they accomplish nothing. Fix:
+- Pipeline should exit non-zero if 0 events were classified (indicates LLM failure, not "no events")
+- Daily digest should report the number of events it actually found, not just "sent"
+- Consider a simple Slack/email webhook on pipeline failure
+
+### 5. Website improvements (low — works but basic)
+- Show event counts by status on the homepage ("X confirmed, Y date-confirmed, Z estimated")
+- Add a "last pipeline run" timestamp so users know data freshness
+- Filter/sort by status, date, sector
+- Show which events are new since last visit
+
+### 6. Cost monitoring (low — cheap but good to track)
+- Check OpenRouter credit usage after a week of scheduled runs
+- Set up a budget alert on OpenRouter if available
+- Track tokens consumed per pipeline run (the LLM response includes usage metadata)
+
+---
+
 ## Key Decisions Made (and why)
 
 | Decision | Rationale |

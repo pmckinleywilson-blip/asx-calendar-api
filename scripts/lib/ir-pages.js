@@ -8,7 +8,7 @@
 
 const https = require('https');
 const http = require('http');
-const { createClient, getModel, hasDailyTokenLimit } = require('./llm-client');
+const { createClient, getModel } = require('./llm-client');
 
 const USER_AGENT = 'ASXCalendarAPI/1.0 (events calendar)';
 const MAX_RETRIES = 3;

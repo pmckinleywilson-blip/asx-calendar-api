@@ -125,8 +125,7 @@ Core table. Unique constraint on `(ticker, event_date, event_type)`. Key fields:
 | Variable | Where | Purpose |
 |---|---|---|
 | `DATABASE_URL` | Vercel, GitHub Secrets, Railway | Neon Postgres connection string |
-| `GROQ_API_KEY` | Vercel, GitHub Secrets, Railway | Groq LLM API key |
-| `OPENROUTER_API_KEY` | GitHub Secrets, Railway | OpenRouter API key (alternative LLM provider) |
+| `OPENROUTER_API_KEY` | GitHub Secrets, Railway | OpenRouter API key (sole LLM provider) |
 | `LLM_MODEL` | GitHub Secrets | Override default model (currently `google/gemma-4-31b-it`) |
 | `RESEND_API_KEY` | Vercel, GitHub Secrets | Email delivery |
 | `INVITE_FROM_EMAIL` | GitHub Secrets | Sender email for calendar invites |
@@ -135,11 +134,11 @@ Core table. Unique constraint on `(ticker, event_date, event_type)`. Key fields:
 
 ## LLM Provider
 
-The pipeline supports two LLM providers via `scripts/lib/llm-client.js`:
-- **OpenRouter** (preferred): Uses the `openai` npm package with baseURL `https://openrouter.ai/api/v1`. No daily token cap on paid models. $10 credit balance added April 9, 2026.
-- **Groq** (fallback): Uses `groq-sdk` package. Free tier with daily token limits (~100K tokens/day).
-
-When both keys are set, OpenRouter is preferred. Falls back to Groq if OpenRouter fails.
+The pipeline uses **OpenRouter** as the sole LLM provider via `scripts/lib/llm-client.js`:
+- Uses the `openai` npm package with baseURL `https://openrouter.ai/api/v1`
+- No daily token cap on paid models
+- $10 credit balance added April 9, 2026
+- Groq fallback was removed in April 27 session (groq-sdk had path issues with non-Groq providers)
 
 Current model: `google/gemma-4-31b-it` (paid) on OpenRouter. ~$0.14/M input, ~$0.40/M output tokens. Estimated cost: $1-3/month.
 
@@ -169,83 +168,105 @@ Current model: `google/gemma-4-31b-it` (paid) on OpenRouter. ~$0.14/M input, ~$0
 
 ---
 
-## Current State (as of April 9, 2026 — session 2)
+## Current State (as of April 27, 2026 — session 3)
 
 ### Working
-- Website deployed and accessible
-- Database schema created with all tables
+- Website deployed and accessible at https://asx-calendar-api.vercel.app
+- Database: 3,636 events (3,542 estimated, 94 date_confirmed, 0 confirmed)
 - 1,755 companies loaded
-- Pipeline orchestrator (detect -> verify -> notify) with time budgets
-- Continuous poller deployed on Railway.app
-- 3-tier status system in DB and frontend
-- Estimate.js generates PCP-based events for all companies (~3,500 estimated events in DB)
-- Subscriber ICS calendar feeds
-- **OpenRouter + Gemma 4 integration FIXED** — was broken since setup, now using `openai` npm package
-- **Pipeline completes without timeout** — first successful full run in 42m24s
+- Pipeline running successfully on GitHub Actions — 5x daily on weekdays
+- 8 of last 10 pipeline runs succeeded (~42 min each, now optimised)
+- Health endpoint now reads from database (was reading static file before)
+- Groq fallback code removed — OpenRouter is sole LLM provider
+- Node.js 22 + actions v5 (ahead of June 2 deprecation deadline)
 
-### Database State (April 9)
-- ~3,500+ total events (almost all `estimated` from estimate.js)
-- 5 `date_confirmed` events from IR scraper (WBC found 3, a couple others)
-- 2 events from ASX announcements (TR8, KYP)
-- **0 `confirmed` events** — no webcast URLs in any event yet
-- Root cause: LLM pipeline was broken until this session (see below)
+### What Was Done This Session (April 27)
+1. **Committed & pushed Groq→OpenRouter migration.** 13 files had been modified locally since April 9 but never committed. Removed `groq-sdk` dependency, deleted `groq-classify.js` and `src/lib/groq.ts`, renamed to `llm-classify.js`. Now pushed to origin.
+2. **Fixed /api/health endpoint.** Was reading from static `events.json` (34 records) instead of the database (3,636 events). Now queries Postgres for live counts by status + last_update timestamp.
+3. **Pipeline performance improvements.** Reduced LLM inter-call delay from 1500ms → 500ms (paid tier). Bumped GitHub Actions timeout from 45 → 60 min. Extended detect.js budget to 40 min, verify.js to 58 min base. Should cut runtime by ~30-40%.
+4. **Node.js upgrade.** Updated all 3 workflow jobs from Node 20 → 22, actions/checkout v4 → v5, actions/setup-node v4 → v5. Updated Dockerfile.railway from node:20-slim → node:22-slim.
+5. **Railway cost analysis.** Trial credits 50% consumed. See "Railway Poller Cost Analysis" section below.
 
-### What Was Fixed This Session
-1. **OpenRouter integration (critical).** The `groq-sdk` hardcodes `/openai/v1/chat/completions` as its API path. With OpenRouter baseURL, this produced `https://openrouter.ai/api/v1/openai/v1/chat/completions` → 404. Switched to the `openai` npm package which uses the correct `/chat/completions` path.
-2. **Pipeline timeout kills.** detect.js burned 35 min retrying 404s, leaving verify.js only 10 min before the 45-min timeout killed it. Fixed with: fail-fast on 404/401/403 (no retry), time budget for verify.js, and pipeline.js passes remaining budget.
-3. **Rate limit handling.** Classification failures on rate limit were treating ALL announcements as "possible", flooding extraction with doomed calls. Now: skip batches on rate limit, detect OpenRouter per-day limit and abort early.
-4. **Poller OpenRouter support.** poller.js now accepts `OPENROUTER_API_KEY` in addition to `GROQ_API_KEY`.
-5. **Switched to paid Gemma 4 31B model.** Free-tier daily request cap was too low (~50 requests). Added $10 credits to OpenRouter and switched from `google/gemma-4-31b-it:free` to `google/gemma-4-31b-it` (paid, ~$1-3/month). Updated both the code default AND the `LLM_MODEL` GitHub Secret (the secret overrides code).
+### Database State (April 27)
+- **3,636 total events** in Postgres
+- 3,542 `estimated` (PCP-based dates from estimate.js)
+- 94 `date_confirmed` (from IR scraper + ASX announcements — up from 7 on April 9)
+- **0 `confirmed`** (still no events with webcast URL + time)
+- Pipeline has been running successfully since April 9 — steady accumulation of date_confirmed events
 
 ### Remaining Issues
-1. **Hardcoded IR URLs are brittle** — URLs break when companies redesign their sites. Need a more dynamic approach.
-2. **Daily digest email reports success even when runs fail** — needs honest failure alerting.
-3. **Railway poller needs env var updates** — `OPENROUTER_API_KEY` and possibly `LLM_MODEL` need to be added in the Railway dashboard. May also need a manual redeploy to pick up the code fix.
-### First Successful Pipeline Run (paid model)
-- **Date:** April 9, 2026
-- **Duration:** 43m34s (within 45-min timeout)
-- detect.js: 392 announcements classified → 72 flagged → **3 events detected** (earnings)
-- verify.js: 16/44 IR pages scraped → **4 events found** (earnings with dates)
-- **7 new events written to DB in a single run**
-- No rate limit errors, no daily cap issues
+1. **0 confirmed events** — No events have reached full confirmed status (date + time + webcast URL). The pipeline detects dates but webcast details are rare in announcements.
+2. **Hardcoded IR URLs are brittle** — URLs break when companies redesign their sites.
+3. **Daily digest email reports success even when runs fail** — needs honest failure alerting.
+4. **Railway poller status unknown** — needs env var updates in Railway dashboard. Trial credits running low (see below).
 
 ### Open Questions
-- Does Railway auto-deploy from master, or does it need a manual trigger?
-- What's the actual monthly OpenRouter cost once the pipeline is running on schedule?
-- Can the pipeline process all tiers + full IR verification within 45 minutes? (Currently only gets through 1 of 2 tiers + 16/44 IR tickers)
+- What's the actual monthly OpenRouter cost now that the pipeline is running on schedule?
+- Is the poller actually running on Railway, or is it stopped/broken?
+- With the pipeline speed improvements, can it now process all tiers + full IR verification within 60 minutes?
+
+---
+
+## Railway Poller Cost Analysis (April 27, 2026)
+
+### Current Situation
+- Railway trial: $5 one-time credit, **50% used (~$2.50)** after ~18 days
+- Burn rate: ~$0.14/day → ~$4.20/month
+- Trial expires ~May 9 (30 days from signup)
+- After trial: Free plan gives only $1/month credit (not enough)
+
+### Railway Resource Pricing
+- CPU: $20/vCPU/month ($0.000463/vCPU-min)
+- RAM: $10/GB/month ($0.000231/GB-min)
+- Poller runs ~13 hours/day × 22 weekdays = ~286 hours/month
+- Estimated usage: ~0.1 vCPU avg + ~128MB RAM = **~$1.30/month compute**
+- But Railway Hobby plan minimum is **$5/month** (includes $5 credit)
+
+### Alternatives Compared
+
+| Option | Cost/month | Pros | Cons |
+|---|---|---|---|
+| **Railway Hobby** | $5 | Already deployed, simple | Most expensive option |
+| **Fly.io** | ~$2 | Cheapest hosted option (shared-cpu-1x 256MB = $2.02/mo) | Migration effort, no free tier for new users |
+| **Render free tier** | $0 | Free | 0.1 CPU, spins down on idle — bad for polling |
+| **GitHub Actions cron** | $0 | Already running, unlimited minutes (public repo) | Can't poll every 5s; minimum ~15 min interval |
+| **Hetzner/DO VPS** | ~$4-5 | Full control, can run anything | Ops overhead, overkill for one script |
+
+### Recommendation
+**Short term:** Upgrade Railway to Hobby ($5/month) when trial expires. It's already deployed and working.
+
+**Medium term:** Consider replacing the poller with **more frequent GitHub Actions runs**. Since this is a public repo, GitHub Actions minutes are unlimited. Increasing from 5 runs/day to every 15-30 minutes during market hours would catch most announcements. The pipeline speed improvements from this session (500ms delays, 60-min timeout) make more frequent runs viable. This eliminates Railway entirely — **$0/month**.
+
+**If maximum coverage is needed:** Migrate to **Fly.io** at $2/month — cheapest hosted option for an always-on worker.
 
 ---
 
 ## Suggested Next Steps (priority order)
 
-### 1. Get Railway poller working (high — it's deployed but broken)
-The poller code now supports OpenRouter, but the Railway deployment needs env var updates:
-- Add `OPENROUTER_API_KEY` in the Railway dashboard
-- Add `LLM_MODEL=google/gemma-4-31b-it` in the Railway dashboard
-- Confirm Railway auto-deploys from master, or trigger a manual redeploy
-- Check poller logs after deploy to confirm it's classifying announcements
+### 1. Decide Railway poller future (high — trial expiring ~May 9)
+Options detailed in "Railway Poller Cost Analysis" above. If keeping Railway:
+- Upgrade to Hobby plan ($5/month) before trial expires
+- Add `OPENROUTER_API_KEY` env var in Railway dashboard
+- Add `LLM_MODEL=google/gemma-4-31b-it` env var
+- Confirm auto-deploy picked up the latest code changes
 
-The poller is the key to 100% announcement coverage (the scheduled pipeline only catches what's in the ASX API's 5-item window at scan time). Without it, we miss announcements on busy filing days.
-
-### 2. Pipeline speed — fit all tiers + IR into 45 minutes (high)
-Currently the pipeline only processes 1 of 2 scheduled tiers and 16/44 IR tickers before hitting the time budget. Options:
-- **Increase GitHub Actions timeout** to 60 minutes (simple, but burns more CI minutes)
-- **Parallelize LLM calls** — batch 3-5 concurrent classification requests instead of serial (biggest win, OpenRouter handles concurrent requests fine)
-- **Split tiers across runs** — run ASX100 at one cron time, ASX101-300 at another, so each run has fewer companies
-- **Reduce extraction delay** from 1.5s to 500ms for paid model (paid tier has higher rate limits)
-- **Skip already-seen announcements in detect.js** — the poller's `seen_announcements` table could be reused to avoid re-classifying announcements the poller already processed
-
-### 3. Dynamic IR URL discovery (medium — current URLs are breaking)
+### 2. Dynamic IR URL discovery (medium — current URLs are breaking)
 ~88 hardcoded IR URLs in `ir-pages.js` break when companies redesign their sites. Approaches:
 - **Google Custom Search API** — search `"[company name] investor relations financial calendar"` and cache the top result. Free tier: 100 queries/day.
-- **Crawl from company homepage** — fetch the company's main website, use the LLM to find the IR/financial calendar link. More robust than hardcoded URLs.
-- **ASX company page as anchor** — every ASX-listed company has a page at `asx.com.au/asx/share-price-research/company/[TICKER]` which often links to the company website. Start there.
+- **Crawl from company homepage** — fetch the company's main website, use the LLM to find the IR/financial calendar link.
+- **ASX company page as anchor** — every ASX-listed company has a page at `asx.com.au/asx/share-price-research/company/[TICKER]` which often links to the company website.
 
-### 4. Honest failure alerting (medium)
+### 3. Honest failure alerting (medium)
 The daily digest and pipeline currently report success even when they accomplish nothing. Fix:
 - Pipeline should exit non-zero if 0 events were classified (indicates LLM failure, not "no events")
 - Daily digest should report the number of events it actually found, not just "sent"
 - Consider a simple Slack/email webhook on pipeline failure
+
+### 4. Get to confirmed events (medium — 0 confirmed so far)
+94 events have confirmed dates but none have webcast URLs + times. Investigate:
+- Are the LLM extraction prompts looking for webcast URLs correctly?
+- Do ASX announcements actually contain webcast URLs, or are they on IR pages?
+- May need to scrape IR pages closer to event date for webcast details
 
 ### 5. Website improvements (low — works but basic)
 - Show event counts by status on the homepage ("X confirmed, Y date-confirmed, Z estimated")

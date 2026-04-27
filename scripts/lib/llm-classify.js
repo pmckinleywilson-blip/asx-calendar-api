@@ -151,25 +151,32 @@ async function callLLM(client, messages, attempt) {
 
 const CLASSIFY_SYSTEM_PROMPT = `You are an expert ASX (Australian Securities Exchange) analyst.
 
-GOAL: Identify announcements that contain — or are likely to lead to — information about an investor event that someone could attend, watch, or listen to (e.g. teleconference, webcast, results briefing, investor day, AGM webcast).
+GOAL: Identify announcements that either:
+(a) contain information about an investor event (teleconference, webcast, results briefing, investor day, AGM), OR
+(b) announce the DATE of an upcoming corporate event (results release date, reporting date, AGM date, investor day date) — even if no webcast or dial-in details are included yet.
+
+Both are valuable. Webcast details let investors attend; dates let investors plan ahead. A date without webcast details is still useful — the webcast details typically follow closer to the event.
 
 REASONING APPROACH — for EACH announcement, think about:
-1. What is the PURPOSE of this announcement? Is it communicating results, strategy, or an event — or is it a regulatory/compliance filing?
-2. Could the underlying corporate activity involve a live briefing? Results announcements almost always have an accompanying webcast. Shareholder emails often contain the access details.
-3. Even if the title is generic, could the CONTENT contain webcast URLs, dial-in numbers, or event logistics?
+1. What is the PURPOSE of this announcement? Is it communicating results, strategy, an event, or a future date — or is it a purely administrative/compliance filing?
+2. Does it mention a FUTURE DATE for results, a briefing, a presentation, an AGM, or an investor day?
+3. Could the underlying corporate activity involve a live briefing? Results announcements almost always have an accompanying webcast.
+4. Even if the title is generic, could the CONTENT contain dates, webcast URLs, dial-in numbers, or event logistics?
 
-Companies communicate webcast details in many non-obvious ways:
-- A "Shareholder Email" or "Shareholder Letter" may contain the webcast URL for an upcoming result
-- A "Media Release" may embed conference call dial-in details at the bottom
+Companies communicate event information in many non-obvious ways:
+- A "Shareholder Email" or "Shareholder Letter" may contain the webcast URL or announce a future results date
+- A "Media Release" may embed conference call dial-in details at the bottom, or announce an upcoming results date
 - An "Investor Presentation" PDF may have the webcast link on the cover page
 - An Appendix 4D filing is often accompanied by a separate results briefing
-- A "Trading Halt" signals the company is about to make a material announcement — these are frequently followed by ad-hoc webcasts or conference calls. Classify as "possible".
+- A "Financial Calendar" or "Key Dates" announcement lists upcoming reporting dates for the year
+- A "Results Release Date" or "Notification of Reporting Dates" announcement sets the date for upcoming results
+- A "Trading Halt" signals the company is about to make a material announcement — these are frequently followed by ad-hoc webcasts. Classify as "possible".
 - An announcement with [price-sensitive] is more likely to involve a briefing than a routine filing
 
 CLASSIFY each announcement:
-- "relevant" — likely contains or leads to event/webcast information
-- "possible" — uncertain, but the corporate context suggests it could (e.g. trading halts, generic updates)
-- "irrelevant" — purely administrative filing with no plausible connection to an investor event (e.g. substantial holder notices, director interest changes, daily share buy-back notices, cleansing notices, Appendix 3Y/3Z forms)
+- "relevant" — likely contains event/webcast details OR an upcoming event date
+- "possible" — uncertain, but the corporate context suggests it could (e.g. trading halts, generic updates that might mention dates)
+- "irrelevant" — purely administrative filing with no plausible connection to an investor event or date (e.g. substantial holder notices, director interest changes, daily share buy-back notices, cleansing notices, Appendix 3Y/3Z forms)
 
 Return a JSON array: [{"index": 0, "classification": "relevant"}, ...]
 Return ONLY JSON.`;
@@ -180,15 +187,22 @@ Return ONLY JSON.`;
 
 const EXTRACT_SYSTEM_PROMPT = `You are extracting investor event details from an ASX company announcement.
 
-An "investor event" is anything an investor might want to attend, watch live, or listen to a replay of — such as an earnings briefing, investor day, strategy presentation, conference call, or AGM webcast.
+There are TWO types of information we want to capture:
+
+TYPE 1 — EVENT WITH DETAILS: An investor event someone could attend, watch, or listen to (earnings briefing, investor day, conference call, AGM webcast). These have webcast URLs, dial-in numbers, times, or registration links.
+
+TYPE 2 — DATE ONLY: An announcement of WHEN a future corporate event will occur (results release date, AGM date, investor day date), even if no webcast or dial-in details are provided yet. These dates let investors plan ahead — the webcast details typically follow closer to the event.
+
+Both types are valuable. Extract whichever is present.
 
 REASONING APPROACH:
-1. Read the FULL content carefully. Webcast details are often buried at the bottom of a media release, in a footnote, or in a "For further information" section.
-2. Distinguish between the REPORTING PERIOD end date and the EVENT date. "Half year ended 30 September 2025" means Sep 30 is the period end — the briefing date is when the announcement was released or when the call is scheduled.
+1. Read the FULL content carefully. Webcast details are often buried at the bottom, in a footnote, or in a "For further information" section.
+2. Distinguish between the REPORTING PERIOD end date and the EVENT date. "Half year ended 30 September 2025" means Sep 30 is the period end — the briefing/results date is when results are released or when the call is scheduled.
 3. Look for ANY access method: webcast URLs (often viostream, webcast.openbriefing.com, or company-hosted), teleconference dial-in numbers, registration links, or references to a live Q&A.
-4. Shareholder emails and letters often contain the PRIMARY webcast link that isn't in the media release itself.
+4. Also look for DATE announcements: "results will be released on [date]", "AGM to be held on [date]", financial calendar listings, key dates for the year.
 5. If the announcement references a presentation or briefing happening "today" or "at [time]", that's an event — extract it even if no URL is given.
 6. A replay URL is still valuable — extract it. Investors use replays.
+7. If the announcement lists MULTIPLE future dates (e.g. a financial calendar with HY results, FY results, AGM), return the NEAREST future date as the primary event. Mention the others in the description.
 
 Return JSON:
 {
@@ -207,12 +221,13 @@ Return JSON:
 }
 
 RULES:
-1. event_date = the date of the BRIEFING/WEBCAST, not the reporting period end date
+1. event_date = the date of the BRIEFING/RESULTS RELEASE, not the reporting period end date
 2. Convert all times to AEST (UTC+10). AEDT = AEST+1, so subtract 1 hour
 3. Webcast URLs should be from the company or their webcast provider — not news sites
-4. If a date is mentioned but you cannot determine whether it is the call date or the period date, set confidence to "low"
-5. "has_event" = false only if there is NO mention of any briefing, call, webcast, or presentation event
-6. Return ONLY JSON, no markdown or explanation`;
+4. If a date is mentioned but you cannot determine whether it is the event date or the period end date, set confidence to "low"
+5. "has_event" = true if the announcement contains EITHER webcast/briefing details OR a future event date. Set to false only if there is no event information AND no future date.
+6. If you have a date but no webcast/dial-in details, still return has_event: true with the date, and set webcast_url, phone_number etc. to null. The date alone is valuable.
+7. Return ONLY JSON, no markdown or explanation`;
 
 // ---------------------------------------------------------------------------
 // classifyAnnouncements — Batch classify announcement titles via LLM

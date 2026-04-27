@@ -198,7 +198,18 @@ async function upsertEvent(sql, event) {
         phone_number   = COALESCE(EXCLUDED.phone_number, events.phone_number),
         phone_passcode = COALESCE(EXCLUDED.phone_passcode, events.phone_passcode),
         fiscal_period  = COALESCE(EXCLUDED.fiscal_period, events.fiscal_period),
+        source         = CASE
+          WHEN events.source = 'estimated' THEN EXCLUDED.source
+          ELSE events.source
+        END,
         source_url     = COALESCE(EXCLUDED.source_url, events.source_url),
+        status         = CASE
+          WHEN COALESCE(EXCLUDED.webcast_url, events.webcast_url) IS NOT NULL
+               AND COALESCE(EXCLUDED.event_time, events.event_time) IS NOT NULL
+          THEN 'confirmed'
+          WHEN events.status = 'estimated' THEN 'date_confirmed'
+          ELSE events.status
+        END,
         updated_at     = NOW()
       RETURNING id, ticker, event_date, event_type
     `;

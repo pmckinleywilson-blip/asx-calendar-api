@@ -27,7 +27,7 @@ const { fetchAnnouncementContent } = require('./lib/asx-api');
 
 const CONCURRENCY = 50;          // API calls in parallel per batch
 const SWEEP_PAUSE_MS = 2000;     // Pause between full sweeps
-const LLM_DELAY_MS = 1000;       // Delay between LLM calls
+const LLM_DELAY_MS = 500;        // Delay between LLM calls — paid tier
 const BATCH_DELAY_MS = 200;      // Delay between concurrent batches
 const CLEANUP_INTERVAL_H = 24;   // Hours between seen_announcements cleanup
 const SEEN_RETENTION_DAYS = 90;  // Keep seen IDs for 90 days

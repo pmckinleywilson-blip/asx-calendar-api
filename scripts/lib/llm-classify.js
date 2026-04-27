@@ -8,10 +8,10 @@ const { createClient, getModel } = require('./llm-client');
 const MODEL_OVERRIDE = null; // set to override llm-client's default
 const BATCH_SIZE = 25;
 const MAX_RETRIES = 3;
-const LLM_DELAY_MS = 1500; // 1.5s between batches — respect per-minute rate limits
+const LLM_DELAY_MS = 500; // 500ms between batches — paid tier has higher rate limits
 
 // Global flag: once we hit a daily token limit, skip all remaining LLM calls.
-// This prevents the pipeline from burning 45 minutes retrying against a limit
+// This prevents the pipeline from burning 60 minutes retrying against a limit
 // that won't reset for hours.
 let _dailyLimitReached = false;
 

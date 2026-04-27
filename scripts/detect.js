@@ -17,13 +17,13 @@ const { classifyAnnouncements, extractEventDetails, isLLMBudgetExhausted } = req
 // Configuration
 // ---------------------------------------------------------------------------
 
-const LLM_DELAY_MS = 1500;        // 1.5s between LLM calls — respect per-minute rate limits
-const CONTENT_FETCH_DELAY_MS = 500;
+const LLM_DELAY_MS = 500;         // 500ms between LLM calls — paid tier has higher rate limits
+const CONTENT_FETCH_DELAY_MS = 300;
 
-// Global time budget: abort gracefully before the GitHub Actions timeout.
+// Global time budget: abort gracefully before the GitHub Actions timeout (60 min).
 // The pipeline.js orchestrator runs detect → verify → notify sequentially,
-// so detect gets at most ~35 minutes (leaving time for verify + notify).
-const TIME_BUDGET_MS = 35 * 60 * 1000; // 35 minutes
+// so detect gets at most ~40 minutes (leaving ~17 min for verify + ~3 min for notify).
+const TIME_BUDGET_MS = 40 * 60 * 1000; // 40 minutes
 
 // ---------------------------------------------------------------------------
 // CSV parsing (handles quoted fields with commas)

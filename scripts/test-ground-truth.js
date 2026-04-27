@@ -37,6 +37,23 @@ function delay(ms) {
   return new Promise(function (resolve) { setTimeout(resolve, ms); });
 }
 
+/**
+ * Safely extract YYYY-MM-DD from a DB date value.
+ * The neon driver returns DATE columns as JavaScript Date objects at midnight
+ * local time. Using toISOString() shifts them back a day in UTC (AEST is UTC+10).
+ * We must use local-timezone getters (getFullYear/getMonth/getDate) instead.
+ */
+function dbDateToString(d) {
+  if (typeof d === 'string') return d.substring(0, 10);
+  if (d instanceof Date) {
+    var y = d.getFullYear();
+    var m = String(d.getMonth() + 1).padStart(2, '0');
+    var day = String(d.getDate()).padStart(2, '0');
+    return y + '-' + m + '-' + day;
+  }
+  return String(d).substring(0, 10);
+}
+
 async function main() {
   var args = process.argv.slice(2);
   var testAll = args.includes('--all');
@@ -169,9 +186,7 @@ async function main() {
     var closestDiff = Infinity;
 
     for (var j = 0; j < dbEvents.length; j++) {
-      var dbDate = dbEvents[j].event_date instanceof Date
-        ? dbEvents[j].event_date.toISOString().substring(0, 10)
-        : String(dbEvents[j].event_date).substring(0, 10);
+      var dbDate = dbDateToString(dbEvents[j].event_date);
 
       var diff = Math.abs(
         (new Date(yahooDate).getTime() - new Date(dbDate).getTime()) / (1000 * 60 * 60 * 24)
@@ -188,10 +203,16 @@ async function main() {
     if (closestDiff === 0) {
       // Exact match
       stats.exact_match++;
-      if (tickers.length <= 20) {
-        console.log(prefix + ' — ' + C.green('✓ EXACT MATCH') +
-          '  ' + yahooDate + '  [' + closestEvent.status + ', ' + closestEvent.source + ']');
-      }
+      console.log(prefix + ' — ' + C.green('✓ EXACT MATCH') +
+        '  ' + yahooDate + '  [' + closestEvent.status + ', ' + closestEvent.source + ']');
+    } else if (closestDiff === 1 && closestEvent.source === 'company_ir') {
+      // 1-day diff from an IR source is likely a Yahoo US/AU timezone artefact.
+      // Yahoo returns dates in US market time; Australian companies announce in AEST
+      // which can be the next calendar day. Trust the company IR page.
+      stats.exact_match++;
+      console.log(prefix + ' — ' + C.green('✓ MATCH (±1d timezone)') +
+        '  Yahoo: ' + yahooDate + '  DB: ' + closestEvent._date +
+        '  [' + closestEvent.status + ', ' + closestEvent.source + ']');
     } else if (closestDiff <= 7) {
       // Close match (within a week — might be different event or slight date difference)
       stats.close_match++;

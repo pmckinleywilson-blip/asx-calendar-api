@@ -25,8 +25,8 @@ const IR_URLS = {
   CBA:  'https://www.commbank.com.au/about-us/investors.html',
   BHP:  'https://www.bhp.com/investors',  // may timeout — large site, keep for retry
   WBC:  'https://www.westpac.com.au/about-westpac/investor-centre/',
-  NAB:  'https://www.nab.com.au/about-us/shareholder-centre/financial-disclosures-and-reporting',
-  ANZ:  'https://www.anz.com/shareholder/centre/',
+  NAB:  'https://www.nab.com.au/about-us/shareholder-centre/financial-calendar',
+  ANZ:  'https://www.anz.com/shareholder/centre/calendar-events/financial-calendar/',
   WES:  'https://www.wesfarmers.com.au/investor-centre/results-and-presentations',
   MQG:  'https://www.macquarie.com/au/en/investors.html',
   CSL:  'https://investors.csl.com/',
@@ -54,7 +54,7 @@ const IR_URLS = {
   SUN:  'https://www.suncorpgroup.com.au/investors',
   IAG:  'https://www.iag.com.au/investor-centre',
   PLS:  'https://pls.com/investors/',
-  JHX:  'https://www.jameshardie.com/investor-relations',
+  JHX:  'https://ir.jameshardie.com/financial-information/quarterly-results/default.aspx',
   WTC:  'https://www.wisetechglobal.com/investors/welcome/',
 
   // ASX 31-50
@@ -78,7 +78,7 @@ const IR_URLS = {
   ASX:  'https://www.asx.com.au/about/asx-shareholders',
   SHL:  'https://investors.sonichealthcare.com/',
   ORI:  'https://www.orica.com/investors',
-  TNE:  'https://www.technologyonecorp.com/investor-relations',
+  TNE:  'https://www.technology1.com/company/investors/financial-calendar',
   RHC:  'https://www.ramsayhealth.com/en/investors/',
   CAR:  'https://www.cargroup.com.au/investor-centre',
   JBH:  'https://investors.jbhifi.com.au/',

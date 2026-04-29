@@ -17,7 +17,7 @@
 const fs = require('fs');
 const path = require('path');
 const { neon } = require('@neondatabase/serverless');
-const { getIRUrl, scrapeIRPage, isIRDailyLimitReached } = require('./lib/ir-pages');
+const { getIRUrl, scrapeIRPage, isIRDailyLimitReached, loadIRPages } = require('./lib/ir-pages');
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -276,6 +276,11 @@ async function main() {
 
   var sql = neon(databaseUrl);
 
+  // Step 0: Load IR URLs from the database (auto-creates and seeds the
+  // ir_pages table on first run). This populates the in-memory _urlMap that
+  // getIRUrl reads from, and lets us track scrape outcomes per ticker.
+  await loadIRPages(sql);
+
   // Step 1: Load companies from CSV
   var companies = loadCompanies();
 
@@ -318,7 +323,7 @@ async function main() {
     console.log('[' + (i + 1) + '/' + tickers.length + '] ' + ticker);
 
     try {
-      var events = await scrapeIRPage(ticker, llmApiKey);
+      var events = await scrapeIRPage(ticker, llmApiKey, sql);
       totalScraped++;
 
       if (events.length === 0) {

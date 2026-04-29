@@ -118,6 +118,62 @@ Core table. Unique constraint on `(ticker, event_date, event_type)`. Key fields:
 ### `notification_log` table
 - Prevents duplicate emails. Unique on `(subscriber_id, event_id)`
 
+### `ir_pages` table (added April 29, session 4)
+Stores the IR URL for each ticker plus health metrics. Auto-created and seeded
+on first `verify.js` run from the hardcoded `IR_URLS` map in `lib/ir-pages.js`.
+- `ticker` (PK), `url`
+- `last_checked_at`, `last_status` (`ok`/`http_error`/`no_events`/`parse_error`),
+  `last_http_code`, `last_event_count`
+- `consecutive_failures` (HTTP/network errors — triggers rediscovery at ≥3)
+- `consecutive_no_events` (200 OK but 0 events extracted — triggers at ≥8)
+- `discovered_via` (`seed` / `markit_about` / `manual`),
+  `rediscovered_at`, `previous_url`
+
+---
+
+## IR URL Discovery System
+
+The `ir_pages` table replaces the old hardcoded `IR_URLS` map as the source of
+truth for IR page URLs (the map remains in `lib/ir-pages.js` as the seed and an
+offline fallback).
+
+**How it works:**
+1. **Seed.** On first `verify.js` run, the table is auto-created and populated
+   from the hardcoded map. After that, `verify.js` reads URLs from the DB.
+2. **Track outcomes.** Each `scrapeIRPage()` call records its result against
+   the ticker — HTTP status, event count, and either incrementing
+   `consecutive_failures` or `consecutive_no_events` on a bad run.
+3. **Auto-rediscover.** Before the next scrape attempt, if a ticker has hit
+   the failure threshold (≥3 HTTP errors or ≥8 zero-event runs), the system
+   tries to find a fresh URL via:
+   - **Markit `/companies/{TICKER}/about`** for the canonical company website
+     (every ASX-listed company is in this API).
+   - **Homepage scrape** with realistic User-Agent.
+   - **Heuristic link extraction** — anchors with hrefs matching
+     `/investor`, `/shareholder`, `/ir`, `/financial-calendar` etc, scored
+     against negative patterns (`/products`, `/careers`, etc).
+4. **Persistence.** A successful rediscovery updates the `url` column,
+   preserves the old one in `previous_url` for audit, and resets the failure
+   counters. The in-memory `_urlMap` is updated too so the next scrape uses the
+   new URL immediately.
+
+**No LLM is used in discovery** — keeps it cheap enough to run on every verify
+pass without bloating the OpenRouter bill. If the heuristic finds nothing, the
+existing URL is left in place.
+
+**Health reporting** — run `node scripts/ir-health.js` to see which URLs are
+healthy, stale, or were auto-rediscovered. Add `--rediscover` to actively
+re-run discovery against any flagged-stale ticker. Add `--rediscover-all` to
+brute-force every ticker (useful if a wave of sites redesigned at once).
+
+**Files involved:**
+- `scripts/lib/ir-pages.js` — main scraper, now DB-aware. Exports
+  `loadIRPages`, `recordScrapeOutcome`, `rediscoverStale`, `shouldRediscover`.
+- `scripts/lib/ir-discovery.js` — Markit lookup + homepage heuristic.
+- `scripts/ir-health.js` — CLI report and rediscovery driver.
+- `scripts/verify.js` — calls `loadIRPages(sql)` at startup and threads `sql`
+  through `scrapeIRPage(ticker, llmApiKey, sql)` so outcomes are tracked.
+
 ---
 
 ## Environment Variables
@@ -168,19 +224,39 @@ Current model: `google/gemma-4-31b-it` (paid) on OpenRouter. ~$0.14/M input, ~$0
 
 ---
 
-## Current State (as of April 27, 2026 — session 3)
+## Current State (as of April 29, 2026 — session 4)
 
 ### Working
-- Website deployed and accessible at https://asx-calendar-api.vercel.app
-- Database: 3,636 events (3,542 estimated, 94 date_confirmed, 0 confirmed)
-- 1,755 companies loaded
-- Pipeline running successfully on GitHub Actions — 5x daily on weekdays
-- 8 of last 10 pipeline runs succeeded (~42 min each, now optimised)
-- Health endpoint now reads from database (was reading static file before)
-- Groq fallback code removed — OpenRouter is sole LLM provider
-- Node.js 22 + actions v5 (ahead of June 2 deprecation deadline)
+- Website redeployed (Vercel auto-deploy had stalled — manual `vercel --prod`
+  pushed 22 days of commits live, including the database-backed `/api/health`).
+- Railway poller back online — `OPENROUTER_API_KEY` was missing from Railway
+  env vars (the Apr 27 Groq→OpenRouter migration removed the Groq fallback
+  but the env update on Railway was outstanding). Poller is sweeping again.
+- Database: 3,659 events (3,542 estimated, 117 date_confirmed, 0 confirmed),
+  growing by ~23 date_confirmed events in the last 2 days.
+- IR URL discovery system shipped — see "IR URL Discovery System" section above.
 
-### What Was Done This Session (April 27)
+### What Was Done This Session (April 29)
+1. **Diagnosed Railway crash.** Worker was crashing on startup with
+   `FATAL: OPENROUTER_API_KEY not set` × 10 retries → Railway marked the
+   deployment Crashed. Cause: Apr 27 Groq removal made OpenRouter mandatory,
+   but the Railway env had `GROQ_API_KEY` only.
+2. **Fixed Railway env.** Added `OPENROUTER_API_KEY` and
+   `LLM_MODEL=google/gemma-4-31b-it`. Confirmed poller resumed sweeping
+   (1029-write catch-up batch on first restart, then steady-state).
+3. **Discovered Vercel auto-deploy was stalled.** Last production deployment
+   was 22 days old despite multiple pushes since. Manually triggered
+   `vercel --prod` from CLI. Production now reflects all April commits.
+   Auto-deploy Git integration should be checked in Vercel dashboard.
+4. **Built IR URL discovery system.** New `ir_pages` Postgres table tracks
+   URL health and auto-rediscovers stale URLs without an LLM in the loop.
+   See "IR URL Discovery System" above. Files added: `lib/ir-discovery.js`,
+   `ir-health.js`. Files changed: `lib/ir-pages.js`, `verify.js`,
+   `PROJECT.md`.
+
+### Previous Session (April 27)
+
+#### What Was Done This Session (April 27)
 1. **Committed & pushed Groq→OpenRouter migration.** 13 files had been modified locally since April 9 but never committed. Removed `groq-sdk` dependency, deleted `groq-classify.js` and `src/lib/groq.ts`, renamed to `llm-classify.js`. Now pushed to origin.
 2. **Fixed /api/health endpoint.** Was reading from static `events.json` (34 records) instead of the database (3,636 events). Now queries Postgres for live counts by status + last_update timestamp.
 3. **Pipeline performance improvements.** Reduced LLM inter-call delay from 1500ms → 500ms (paid tier). Bumped GitHub Actions timeout from 45 → 60 min. Extended detect.js budget to 40 min, verify.js to 58 min base. Should cut runtime by ~30-40%.
@@ -250,11 +326,19 @@ Options detailed in "Railway Poller Cost Analysis" above. If keeping Railway:
 - Add `LLM_MODEL=google/gemma-4-31b-it` env var
 - Confirm auto-deploy picked up the latest code changes
 
-### 2. Dynamic IR URL discovery (medium — current URLs are breaking)
-~88 hardcoded IR URLs in `ir-pages.js` break when companies redesign their sites. Approaches:
-- **Google Custom Search API** — search `"[company name] investor relations financial calendar"` and cache the top result. Free tier: 100 queries/day.
-- **Crawl from company homepage** — fetch the company's main website, use the LLM to find the IR/financial calendar link.
-- **ASX company page as anchor** — every ASX-listed company has a page at `asx.com.au/asx/share-price-research/company/[TICKER]` which often links to the company website.
+### 2. Dynamic IR URL discovery — IMPLEMENTED (April 29, session 4)
+Hardcoded IR URLs are now persisted in the `ir_pages` Postgres table with health
+tracking, and stale URLs auto-rediscover via the Markit `/about` endpoint plus
+HTML heuristics. See **IR URL Discovery System** section below for details.
+
+**Remaining limitations:**
+- LLM-based discovery is not implemented (kept off the hot path for cost). If
+  the heuristic finds zero candidate links on a homepage (because the page is
+  bot-blocked or JS-rendered), the existing URL is left in place for manual
+  intervention.
+- The heuristic sometimes prefers a parent IR page (e.g. `/shareholder-centre`)
+  over the original deep-link (e.g. `/shareholder-centre/financial-calendar`).
+  The LLM extractor still finds events from parent pages, so this is acceptable.
 
 ### 3. Honest failure alerting (medium)
 The daily digest and pipeline currently report success even when they accomplish nothing. Fix:

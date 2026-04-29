@@ -3,16 +3,31 @@
 // Fetches and extracts upcoming investor events from company
 // IR webpages. Highest-priority data source (company_ir=5).
 //
-// Exports: getIRUrl, scrapeIRPage, scrapeIRPages
+// URL persistence:
+//   - Hardcoded IR_URLS map below acts as the seed and offline fallback.
+//   - When a `sql` connection is provided, URLs are read from / written to
+//     the `ir_pages` table (auto-created and seeded on first call).
+//   - Scrape outcomes are tracked in the table so we can report on stale
+//     URLs and auto-rediscover via `lib/ir-discovery.js`.
+//
+// Exports: getIRUrl, scrapeIRPage, scrapeIRPages, ensureIRPagesTable,
+//          loadIRPages, recordScrapeOutcome, rediscoverStale
 // ============================================================
 
 const https = require('https');
 const http = require('http');
 const { createClient, getModel } = require('./llm-client');
+const { discoverIRUrl } = require('./ir-discovery');
 
 const USER_AGENT = 'ASXCalendarAPI/1.0 (events calendar)';
 const MAX_RETRIES = 3;
 const SCRAPE_DELAY_MS = 1000;
+
+// Trigger auto-rediscovery once a URL has hit this many consecutive HTTP errors.
+const REDISCOVER_HTTP_THRESHOLD = 3;
+// Trigger auto-rediscovery once a URL has returned 0 events on this many consecutive runs
+// (200 OK but the LLM found nothing — likely a redesigned page or a non-IR landing).
+const REDISCOVER_ZERO_THRESHOLD = 8;
 
 // ---------------------------------------------------------------------------
 // IR page URLs for top ASX companies
@@ -345,23 +360,283 @@ function buildIRSystemPrompt(today) {
 }
 
 // ---------------------------------------------------------------------------
+// In-memory URL map (kept in sync with the DB if a sql connection is used).
+// Initialised from the hardcoded IR_URLS map and replaced/augmented by
+// loadIRPages(sql) when called.
+// ---------------------------------------------------------------------------
+
+var _urlMap = Object.assign({}, IR_URLS);
+var _dbLoaded = false;
+
+// ---------------------------------------------------------------------------
+// ensureIRPagesTable — Create the ir_pages table if it doesn't exist, and
+// seed it with the hardcoded IR_URLS map on first invocation. Idempotent.
+// ---------------------------------------------------------------------------
+
+async function ensureIRPagesTable(sql) {
+  if (!sql) return;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS ir_pages (
+      ticker                TEXT PRIMARY KEY,
+      url                   TEXT NOT NULL,
+      last_checked_at       TIMESTAMPTZ,
+      last_status           TEXT,
+      last_http_code        INTEGER,
+      last_event_count      INTEGER DEFAULT 0,
+      consecutive_failures  INTEGER DEFAULT 0,
+      consecutive_no_events INTEGER DEFAULT 0,
+      discovered_via        TEXT DEFAULT 'manual',
+      rediscovered_at       TIMESTAMPTZ,
+      previous_url          TEXT,
+      created_at            TIMESTAMPTZ DEFAULT NOW(),
+      updated_at            TIMESTAMPTZ DEFAULT NOW()
+    )
+  `;
+
+  // Seed: insert any tickers from the hardcoded map that aren't already in the table.
+  // We do this individually rather than as a bulk insert so we can ON CONFLICT-skip
+  // safely without the placeholder generation getting unwieldy.
+  var keys = Object.keys(IR_URLS);
+  for (var i = 0; i < keys.length; i++) {
+    var ticker = keys[i];
+    var url = IR_URLS[ticker];
+    await sql`
+      INSERT INTO ir_pages (ticker, url, discovered_via)
+      VALUES (${ticker}, ${url}, 'seed')
+      ON CONFLICT (ticker) DO NOTHING
+    `;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// loadIRPages — Load the URL map from the database into in-memory _urlMap.
+// Falls back to the hardcoded IR_URLS map on any error.
+// Returns the map (for callers that want it directly).
+// ---------------------------------------------------------------------------
+
+async function loadIRPages(sql) {
+  if (!sql) {
+    _urlMap = Object.assign({}, IR_URLS);
+    _dbLoaded = false;
+    return _urlMap;
+  }
+
+  try {
+    await ensureIRPagesTable(sql);
+    var rows = await sql`SELECT ticker, url FROM ir_pages`;
+    var map = {};
+    for (var i = 0; i < rows.length; i++) {
+      map[rows[i].ticker] = rows[i].url;
+    }
+    // Also include any hardcoded entries not yet in the DB (defensive fallback)
+    var seedKeys = Object.keys(IR_URLS);
+    for (var j = 0; j < seedKeys.length; j++) {
+      if (!map[seedKeys[j]]) map[seedKeys[j]] = IR_URLS[seedKeys[j]];
+    }
+    _urlMap = map;
+    _dbLoaded = true;
+    console.log('[ir-pages] Loaded ' + rows.length + ' IR URLs from database (' + Object.keys(map).length + ' total with seed fallback)');
+    return _urlMap;
+  } catch (err) {
+    console.log('[ir-pages] Could not load from DB (' + err.message + '). Using hardcoded fallback.');
+    _urlMap = Object.assign({}, IR_URLS);
+    _dbLoaded = false;
+    return _urlMap;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// recordScrapeOutcome — Persist the outcome of a single scrapeIRPage run to
+// the ir_pages table. Tracks success/failure counters used for rediscovery
+// triggers and health reporting.
+//
+// outcome: { status: 'ok'|'http_error'|'no_events'|'parse_error',
+//            httpCode: number|null,
+//            eventCount: number }
+// ---------------------------------------------------------------------------
+
+async function recordScrapeOutcome(sql, ticker, outcome) {
+  if (!sql || !ticker) return;
+  var status = outcome.status || 'unknown';
+  var httpCode = outcome.httpCode || null;
+  var eventCount = outcome.eventCount || 0;
+
+  try {
+    if (status === 'ok') {
+      // Success: reset failure counters
+      await sql`
+        UPDATE ir_pages
+        SET last_checked_at = NOW(),
+            last_status = ${status},
+            last_http_code = ${httpCode},
+            last_event_count = ${eventCount},
+            consecutive_failures = 0,
+            consecutive_no_events = 0,
+            updated_at = NOW()
+        WHERE ticker = ${ticker}
+      `;
+    } else if (status === 'no_events') {
+      // 200 OK but no events extracted — soft failure
+      await sql`
+        UPDATE ir_pages
+        SET last_checked_at = NOW(),
+            last_status = ${status},
+            last_http_code = ${httpCode},
+            last_event_count = 0,
+            consecutive_failures = 0,
+            consecutive_no_events = consecutive_no_events + 1,
+            updated_at = NOW()
+        WHERE ticker = ${ticker}
+      `;
+    } else {
+      // http_error / parse_error / etc — hard failure
+      await sql`
+        UPDATE ir_pages
+        SET last_checked_at = NOW(),
+            last_status = ${status},
+            last_http_code = ${httpCode},
+            consecutive_failures = consecutive_failures + 1,
+            updated_at = NOW()
+        WHERE ticker = ${ticker}
+      `;
+    }
+  } catch (err) {
+    // Don't let stat tracking break the scrape pipeline
+    console.log('  [ir-pages] Could not record outcome for ' + ticker + ': ' + err.message);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// rediscoverStale — For a single ticker, attempt to find a fresh IR URL via
+// lib/ir-discovery (Markit /about → company website → heuristic IR-link search).
+// On success, persists the new URL to ir_pages and updates the in-memory map.
+// Returns the new URL on success, null on failure.
+// ---------------------------------------------------------------------------
+
+async function rediscoverStale(sql, ticker) {
+  if (!sql || !ticker) return null;
+  var t = String(ticker).toUpperCase().trim();
+
+  console.log('  [ir-pages] Triggering rediscovery for ' + t + '...');
+  var result = await discoverIRUrl(t, { log: console.log });
+  if (!result || !result.url) {
+    console.log('  [ir-pages] Rediscovery for ' + t + ' returned no candidate.');
+    return null;
+  }
+
+  // Don't churn if discovery returned the same URL we already have. We still
+  // reset the failure counters so we don't run discovery on every subsequent
+  // verify pass — the next scrape will reincrement them if the URL is genuinely
+  // broken, and rediscovery will trigger again after the threshold.
+  var existing = _urlMap[t] || null;
+  if (existing && existing === result.url) {
+    console.log('  [ir-pages] Rediscovered URL matches existing — no change. Resetting counters.');
+    try {
+      await sql`
+        UPDATE ir_pages
+        SET consecutive_failures = 0,
+            consecutive_no_events = 0,
+            updated_at = NOW()
+        WHERE ticker = ${t}
+      `;
+    } catch (_) { /* ignore */ }
+    return null;
+  }
+
+  try {
+    await sql`
+      UPDATE ir_pages
+      SET previous_url = url,
+          url = ${result.url},
+          discovered_via = ${result.method || 'markit_heuristic'},
+          rediscovered_at = NOW(),
+          consecutive_failures = 0,
+          consecutive_no_events = 0,
+          updated_at = NOW()
+      WHERE ticker = ${t}
+    `;
+    // If the ticker wasn't in the table (no previous URL), insert it
+    var rows = await sql`SELECT 1 FROM ir_pages WHERE ticker = ${t}`;
+    if (rows.length === 0) {
+      await sql`
+        INSERT INTO ir_pages (ticker, url, discovered_via, rediscovered_at)
+        VALUES (${t}, ${result.url}, ${result.method || 'markit_heuristic'}, NOW())
+        ON CONFLICT (ticker) DO NOTHING
+      `;
+    }
+    _urlMap[t] = result.url;
+    console.log('  [ir-pages] ' + t + ' URL updated: ' + (existing || '(none)') + ' -> ' + result.url);
+    return result.url;
+  } catch (err) {
+    console.log('  [ir-pages] Could not persist rediscovered URL for ' + t + ': ' + err.message);
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// shouldRediscover — Decide whether a ticker is stale enough to trigger
+// auto-rediscovery. Reads counters from ir_pages.
+// ---------------------------------------------------------------------------
+
+async function shouldRediscover(sql, ticker) {
+  if (!sql || !ticker) return false;
+  try {
+    var rows = await sql`
+      SELECT consecutive_failures, consecutive_no_events
+      FROM ir_pages WHERE ticker = ${ticker}
+    `;
+    if (rows.length === 0) return false;
+    var r = rows[0];
+    if ((r.consecutive_failures || 0) >= REDISCOVER_HTTP_THRESHOLD) return true;
+    if ((r.consecutive_no_events || 0) >= REDISCOVER_ZERO_THRESHOLD) return true;
+    return false;
+  } catch (_) {
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // getIRUrl — Return the IR page URL for a given ASX ticker, or null
 // ---------------------------------------------------------------------------
 
 function getIRUrl(ticker) {
   if (!ticker) return null;
   var key = ticker.toUpperCase().trim();
-  return IR_URLS[key] || null;
+  return _urlMap[key] || IR_URLS[key] || null;
+}
+
+// ---------------------------------------------------------------------------
+// extractHttpCode — Pull a numeric HTTP status from a fetch error message.
+// Our fetchURL throws "HTTP <code> from <url>" on non-2xx, or other free-text
+// errors (timeout, ECONNRESET, etc) which we treat as code null.
+// ---------------------------------------------------------------------------
+
+function extractHttpCode(errMessage) {
+  if (!errMessage) return null;
+  var m = String(errMessage).match(/HTTP\s+(\d{3})/);
+  return m ? parseInt(m[1], 10) : null;
 }
 
 // ---------------------------------------------------------------------------
 // scrapeIRPage — Scrape a single company's IR page and extract events
+//
+// Optional 3rd argument `sql` enables DB outcome tracking and auto-rediscovery.
+// When provided, scrape outcomes are persisted to ir_pages and stale URLs
+// (>= REDISCOVER_HTTP_THRESHOLD HTTP errors, or >= REDISCOVER_ZERO_THRESHOLD
+// no-event runs) are auto-rediscovered via lib/ir-discovery before retry.
 // ---------------------------------------------------------------------------
 
-async function scrapeIRPage(ticker, llmApiKey) {
+async function scrapeIRPage(ticker, llmApiKey, sql) {
   var normalTicker = ticker.toUpperCase().trim();
-  var url = getIRUrl(normalTicker);
 
+  // If we have a sql connection and the URL has been failing for a while,
+  // try to rediscover BEFORE the next scrape attempt.
+  if (sql && (await shouldRediscover(sql, normalTicker))) {
+    await rediscoverStale(sql, normalTicker);
+  }
+
+  var url = getIRUrl(normalTicker);
   if (!url) {
     return [];
   }
@@ -374,6 +649,13 @@ async function scrapeIRPage(ticker, llmApiKey) {
     html = await fetchURL(url, { timeout: 30000 });
   } catch (err) {
     console.log('  [ir-pages] Failed to fetch IR page for ' + normalTicker + ': ' + err.message);
+    if (sql) {
+      await recordScrapeOutcome(sql, normalTicker, {
+        status: 'http_error',
+        httpCode: extractHttpCode(err.message),
+        eventCount: 0,
+      });
+    }
     return [];
   }
 
@@ -381,6 +663,13 @@ async function scrapeIRPage(ticker, llmApiKey) {
   var text = stripHtml(html);
   if (!text || text.length < 50) {
     console.log('  [ir-pages] IR page for ' + normalTicker + ' had no useful text');
+    if (sql) {
+      await recordScrapeOutcome(sql, normalTicker, {
+        status: 'no_events',
+        httpCode: 200,
+        eventCount: 0,
+      });
+    }
     return [];
   }
   text = text.substring(0, 8000);
@@ -403,6 +692,13 @@ async function scrapeIRPage(ticker, llmApiKey) {
     ]);
   } catch (err) {
     console.log('  [ir-pages] LLM extraction failed for ' + normalTicker + ': ' + err.message);
+    if (sql) {
+      await recordScrapeOutcome(sql, normalTicker, {
+        status: 'parse_error',
+        httpCode: 200,
+        eventCount: 0,
+      });
+    }
     return [];
   }
 
@@ -415,6 +711,13 @@ async function scrapeIRPage(ticker, llmApiKey) {
       parsed = [parsed];
     } else {
       console.log('  [ir-pages] Could not parse LLM response for ' + normalTicker);
+      if (sql) {
+        await recordScrapeOutcome(sql, normalTicker, {
+          status: 'parse_error',
+          httpCode: 200,
+          eventCount: 0,
+        });
+      }
       return [];
     }
   }
@@ -469,8 +772,22 @@ async function scrapeIRPage(ticker, llmApiKey) {
 
   if (events.length > 0) {
     console.log('  [ir-pages] Found ' + events.length + ' upcoming event(s) for ' + normalTicker);
+    if (sql) {
+      await recordScrapeOutcome(sql, normalTicker, {
+        status: 'ok',
+        httpCode: 200,
+        eventCount: events.length,
+      });
+    }
   } else {
     console.log('  [ir-pages] No upcoming events found for ' + normalTicker);
+    if (sql) {
+      await recordScrapeOutcome(sql, normalTicker, {
+        status: 'no_events',
+        httpCode: 200,
+        eventCount: 0,
+      });
+    }
   }
 
   return events;
@@ -480,7 +797,7 @@ async function scrapeIRPage(ticker, llmApiKey) {
 // scrapeIRPages — Batch process multiple tickers with polite delays
 // ---------------------------------------------------------------------------
 
-async function scrapeIRPages(tickers, llmApiKey) {
+async function scrapeIRPages(tickers, llmApiKey, sql) {
   if (!tickers || tickers.length === 0) return [];
 
   var allEvents = [];
@@ -498,7 +815,7 @@ async function scrapeIRPages(tickers, llmApiKey) {
       continue;
     }
 
-    var events = await scrapeIRPage(ticker, llmApiKey);
+    var events = await scrapeIRPage(ticker, llmApiKey, sql);
     for (var j = 0; j < events.length; j++) {
       allEvents.push(events[j]);
     }
@@ -523,5 +840,11 @@ module.exports = {
   scrapeIRPage: scrapeIRPage,
   scrapeIRPages: scrapeIRPages,
   isIRDailyLimitReached: isIRDailyLimitReached,
+  // Persistence + health tracking (require a sql connection)
+  ensureIRPagesTable: ensureIRPagesTable,
+  loadIRPages: loadIRPages,
+  recordScrapeOutcome: recordScrapeOutcome,
+  rediscoverStale: rediscoverStale,
+  shouldRediscover: shouldRediscover,
   IR_URLS: IR_URLS,
 };

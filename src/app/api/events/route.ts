@@ -167,8 +167,11 @@ export async function GET(request: NextRequest) {
       results = results.filter((e) => e.status === 'confirmed' || e.status === 'date_confirmed');
     }
 
-    const dateFrom = p.get('date_from');
-    if (dateFrom) results = results.filter((e) => e.event_date >= dateFrom);
+    // Default lower bound is today — past events shouldn't show unless
+    // the caller explicitly asks for them via date_from.
+    const today = new Date().toISOString().substring(0, 10);
+    const dateFrom = p.get('date_from') || today;
+    results = results.filter((e) => e.event_date >= dateFrom);
     const dateTo = p.get('date_to');
     if (dateTo) results = results.filter((e) => e.event_date <= dateTo);
 

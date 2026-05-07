@@ -538,11 +538,14 @@ export async function getEventsFromDB(
 
   let rows;
 
+  // Default to today when no explicit lower bound is given — past events
+  // shouldn't clutter the calendar. Callers can still pass an older
+  // date_from to query historical data via the API.
   if (tickers && tickers.length > 0) {
     rows = await sql`
       SELECT * FROM events
       WHERE ticker = ANY(${tickers})
-        AND event_date >= COALESCE(${filters.date_from ?? null}::date, '1900-01-01'::date)
+        AND event_date >= COALESCE(${filters.date_from ?? null}::date, CURRENT_DATE)
         AND event_date <= COALESCE(${filters.date_to ?? null}::date, '2100-01-01'::date)
       ORDER BY event_date ASC, event_time ASC NULLS LAST
       LIMIT 5000
@@ -552,7 +555,7 @@ export async function getEventsFromDB(
     rows = await sql`
       SELECT * FROM events
       WHERE (ticker ILIKE ${q} OR company_name ILIKE ${q})
-        AND event_date >= COALESCE(${filters.date_from ?? null}::date, '1900-01-01'::date)
+        AND event_date >= COALESCE(${filters.date_from ?? null}::date, CURRENT_DATE)
         AND event_date <= COALESCE(${filters.date_to ?? null}::date, '2100-01-01'::date)
       ORDER BY event_date ASC, event_time ASC NULLS LAST
       LIMIT 5000
@@ -560,7 +563,7 @@ export async function getEventsFromDB(
   } else {
     rows = await sql`
       SELECT * FROM events
-      WHERE event_date >= COALESCE(${filters.date_from ?? null}::date, '1900-01-01'::date)
+      WHERE event_date >= COALESCE(${filters.date_from ?? null}::date, CURRENT_DATE)
         AND event_date <= COALESCE(${filters.date_to ?? null}::date, '2100-01-01'::date)
       ORDER BY event_date ASC, event_time ASC NULLS LAST
       LIMIT 5000

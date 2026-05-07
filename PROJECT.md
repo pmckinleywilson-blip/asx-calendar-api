@@ -224,9 +224,72 @@ Current model: `google/gemma-4-31b-it` (paid) on OpenRouter. ~$0.14/M input, ~$0
 
 ---
 
-## Current State (as of April 29, 2026 — session 4)
+## Current State (as of May 7, 2026 — session 5)
 
 ### Working
+- **Railway poller upgraded to Hobby plan ($5/mo).** Trial was due to expire
+  ~May 9; paid plan now active. Poller heartbeat verified live via direct
+  query of `seen_announcements.first_seen_at` — last scan ~1.5 min before
+  audit, ~30 scans/hour through ASX trading hours.
+- **Vercel Git auto-deploy restored.** The integration was completely
+  disconnected from GitHub — that's why every "auto-deploy" since early April
+  had silently failed and every deploy required `vercel --prod` from CLI.
+  Reconnected in the dashboard; verified with empty commit (build kicked
+  off in 11 seconds). Going forward every push to `master` deploys.
+- **Past events hidden from `/api/events` by default.** `getEventsFromDB`
+  previously defaulted `date_from` to `'1900-01-01'`, so the homepage showed
+  all 3,719 events including 81 past ones. Now defaults to `CURRENT_DATE`.
+  The `?date_from=` query param remains an explicit override for historical
+  lookups.
+- **ICS endpoints now read from Postgres, not stale events.json.** The feed
+  (`/api/feed/[token]`), bulk download (`/api/calendar/bulk`), single-event
+  ICS (`/api/calendar/[id]`), and Gmail-link route had all been reading
+  `loadEvents()` — a static JSON file with 34 records, 30 days old. They now
+  query the DB. Subscriber feeds carry only future events (the underlying
+  `getEventsByTickers()` already filters to `event_date >= CURRENT_DATE`).
+- **Database: 3,719 events** — 169 `date_confirmed` (up 52 from 117 on Apr
+  29), 3,550 `estimated`, **0 `confirmed`** (unchanged). 1,754 companies,
+  3 subscribers (1 real), 15,165 `seen_announcements`. Pipeline running
+  cleanly — 26 of 30 most recent runs successful (the few failures were all
+  GitHub-infrastructure or Node-22-upgrade transients).
+
+### What Was Done This Session (May 7)
+1. **Status audit.** Confirmed pipeline healthy via `gh run list` (only 3
+   failures + 1 cancel in last 50 runs, all GitHub-side or pre-Node-22
+   upgrade). Confirmed Railway poller was alive via direct DB query of
+   `seen_announcements.first_seen_at`. Confirmed Vercel last-deployment was
+   8 days stale.
+2. **Upgraded Railway to Hobby.** User upgraded in the Railway dashboard;
+   confirmed `OPENROUTER_API_KEY` and `LLM_MODEL=google/gemma-4-31b-it`
+   env vars still set. Poller continued sweeping uninterrupted.
+3. **Fixed past-events bug.** `getEventsFromDB` in `src/lib/db.ts` now
+   defaults `date_from` to `CURRENT_DATE` across all three query branches
+   (tickers / search / default). Static-file fallback in `/api/events`
+   route mirrors the same default. Verified live: `/api/events` returns
+   3,638 events (was 3,719); `?date_from=2020-01-01` still returns the full
+   3,719 via the override. Commit `81ceb28`.
+4. **Restored Vercel Git auto-deploy.** Settings → Git showed "Connect
+   GitHub Repository" — the integration was fully disconnected (root cause
+   of the 30+ days of stale deploys, including the "stalled" auto-deploy
+   noted on Apr 29). User reconnected via the dashboard; verified with an
+   empty commit `fb20945` that triggered a Production build in 11 seconds.
+5. **Switched ICS endpoints to DB.** `/api/feed/[token]`,
+   `/api/calendar/bulk`, `/api/calendar/[id]`, and
+   `/api/calendar/[id]/gmail` now query Postgres when `DATABASE_URL` is
+   set, with `loadEvents()` retained as a fallback. The feed uses
+   `getEventsByTickers()` which is already future-only by design.
+   Verified live by smoke-testing IDs that only exist in the DB (e.g.
+   `225805` returned ORI's HY2026 results ICS), and by fetching the real
+   subscriber's feed and confirming 12 future events for their 5 tickers.
+   Commit `5f84ad3`.
+6. **Refactored `/api/events`.** Added `eventRowToItem()` and
+   `getEventsByIdsFromDB()` helpers to `lib/db.ts`. The events route's
+   row-to-item plumbing collapsed from ~25 lines to 4. All four ICS
+   routes share the same mapper.
+
+### Previous Session (April 29)
+
+#### Working (as of April 29)
 - Website redeployed (Vercel auto-deploy had stalled — manual `vercel --prod`
   pushed 22 days of commits live, including the database-backed `/api/health`).
 - Railway poller back online — `OPENROUTER_API_KEY` was missing from Railway
@@ -236,7 +299,7 @@ Current model: `google/gemma-4-31b-it` (paid) on OpenRouter. ~$0.14/M input, ~$0
   growing by ~23 date_confirmed events in the last 2 days.
 - IR URL discovery system shipped — see "IR URL Discovery System" section above.
 
-### What Was Done This Session (April 29)
+#### What Was Done This Session (April 29)
 1. **Diagnosed Railway crash.** Worker was crashing on startup with
    `FATAL: OPENROUTER_API_KEY not set` × 10 retries → Railway marked the
    deployment Crashed. Cause: Apr 27 Groq removal made OpenRouter mandatory,
@@ -247,7 +310,8 @@ Current model: `google/gemma-4-31b-it` (paid) on OpenRouter. ~$0.14/M input, ~$0
 3. **Discovered Vercel auto-deploy was stalled.** Last production deployment
    was 22 days old despite multiple pushes since. Manually triggered
    `vercel --prod` from CLI. Production now reflects all April commits.
-   Auto-deploy Git integration should be checked in Vercel dashboard.
+   (Root cause finally diagnosed in session 5: Git integration was fully
+   disconnected.)
 4. **Built IR URL discovery system.** New `ir_pages` Postgres table tracks
    URL health and auto-rediscovers stale URLs without an LLM in the loop.
    See "IR URL Discovery System" above. Files added: `lib/ir-discovery.js`,
@@ -272,20 +336,27 @@ Current model: `google/gemma-4-31b-it` (paid) on OpenRouter. ~$0.14/M input, ~$0
 
 ### Remaining Issues
 1. **0 confirmed events** — No events have reached full confirmed status (date + time + webcast URL). The pipeline detects dates but webcast details are rare in announcements.
-2. **Hardcoded IR URLs are brittle** — URLs break when companies redesign their sites.
-3. **Daily digest email reports success even when runs fail** — needs honest failure alerting.
-4. **Railway poller status unknown** — needs env var updates in Railway dashboard. Trial credits running low (see below).
+2. **Daily digest email reports success even when runs fail** — needs honest failure alerting.
+3. **IR scrape coverage is poor** — only 27 of 78 tracked IR pages (35%) return events; 40 are `no_events`, 10 are `http_error`. Auto-rediscovery is implemented but hasn't been actively triggered. Run `node scripts/ir-health.js --rediscover` to clean up.
+4. **Some scheduled GH Actions runs miss their cron window.** May 7's 0:17 UTC run never fired (no infra error — schedule just got dropped). The Railway poller covers the gap, but post-Railway-replacement plans should account for missed runs.
+5. **Estimated events not superseded by date_confirmed events.** Subscriber feed showed both an `estimated` MQG 2026-05-14 row AND a `date_confirmed` MQG 2026-05-07 row — the "true" date was found but the estimate wasn't retired. Probably a fiscal-period-matching gap in `upsertEvent`.
 
 ### Open Questions
 - What's the actual monthly OpenRouter cost now that the pipeline is running on schedule?
-- Is the poller actually running on Railway, or is it stopped/broken?
-- With the pipeline speed improvements, can it now process all tiers + full IR verification within 60 minutes?
+- With the pipeline speed improvements, can it now process all tiers + full IR verification within 60 minutes? (Mostly yes — recent runs land 45-57 min, occasionally hit timeout.)
 
 ---
 
-## Railway Poller Cost Analysis (April 27, 2026)
+## Railway Poller Cost Analysis (April 27, 2026 — superseded May 7)
 
-### Current Situation
+**Decision (May 7, session 5): Hobby plan ($5/month).** Trial was used 50%
+in 18 days, projected burn ~$4.20/mo, so the $5/mo Hobby plan is sized
+correctly with a small margin. Auto-deploy works, env vars are set, poller
+is verified live. Long-term migration options (Fly.io ~$2/mo, or
+replacing the poller with more frequent GH Actions cron — free) are
+preserved below in case the $5/mo becomes worth optimising.
+
+### Current Situation (historical, pre-decision)
 - Railway trial: $5 one-time credit, **50% used (~$2.50)** after ~18 days
 - Burn rate: ~$0.14/day → ~$4.20/month
 - Trial expires ~May 9 (30 days from signup)
@@ -319,12 +390,11 @@ Current model: `google/gemma-4-31b-it` (paid) on OpenRouter. ~$0.14/M input, ~$0
 
 ## Suggested Next Steps (priority order)
 
-### 1. Decide Railway poller future (high — trial expiring ~May 9)
-Options detailed in "Railway Poller Cost Analysis" above. If keeping Railway:
-- Upgrade to Hobby plan ($5/month) before trial expires
-- Add `OPENROUTER_API_KEY` env var in Railway dashboard
-- Add `LLM_MODEL=google/gemma-4-31b-it` env var
-- Confirm auto-deploy picked up the latest code changes
+### 1. Railway poller — RESOLVED (May 7, session 5)
+Upgraded to Hobby plan ($5/month). Trial-expiry decision is no longer
+pressing. Long-term cheaper alternatives (Fly.io ~$2/mo, or replacing the
+poller with frequent GH Actions cron) remain in **Railway Poller Cost
+Analysis** below if the $5/month becomes annoying.
 
 ### 2. Dynamic IR URL discovery — IMPLEMENTED (April 29, session 4)
 Hardcoded IR URLs are now persisted in the `ir_pages` Postgres table with health
@@ -347,21 +417,45 @@ The daily digest and pipeline currently report success even when they accomplish
 - Consider a simple Slack/email webhook on pipeline failure
 
 ### 4. Get to confirmed events (medium — 0 confirmed so far)
-94 events have confirmed dates but none have webcast URLs + times. Investigate:
+169 events have confirmed dates but none have webcast URLs + times. Investigate:
 - Are the LLM extraction prompts looking for webcast URLs correctly?
 - Do ASX announcements actually contain webcast URLs, or are they on IR pages?
 - May need to scrape IR pages closer to event date for webcast details
+- Concrete next move: run `node scripts/test-detect.js` against a known
+  full-disclosure announcement (e.g. CBA or BHP results day) and inspect
+  what the LLM extracts — likely a prompt sharpening, not an architectural
+  problem.
 
-### 5. Website improvements (low — works but basic)
+### 5. Run IR rediscovery (low — quick win)
+Only 35% of tracked IR pages currently return events. The auto-rediscovery
+system shipped in session 4 will eventually clean this up via the failure
+counters, but you can force it manually:
+```
+node scripts/ir-health.js              # see what's stale
+node scripts/ir-health.js --rediscover # actively re-find URLs
+```
+No LLM cost. ~5-min job.
+
+### 6. Estimated-event garbage collection (low)
+When a `date_confirmed` event lands for the same fiscal period as an
+`estimated` event with a different date, the estimated row should be
+retired. Currently both linger (e.g. MQG HY2026 has both 2026-05-07
+date_confirmed AND 2026-05-14 estimated). Fix in `upsertEvent` — match by
+`(ticker, fiscal_period, event_type)` and delete/supersede stale estimates.
+
+### 7. Website improvements (low — works but basic)
 - Show event counts by status on the homepage ("X confirmed, Y date-confirmed, Z estimated")
 - Add a "last pipeline run" timestamp so users know data freshness
 - Filter/sort by status, date, sector
 - Show which events are new since last visit
 
-### 6. Cost monitoring (low — cheap but good to track)
+### 8. Cost monitoring (low — cheap but good to track)
 - Check OpenRouter credit usage after a week of scheduled runs
 - Set up a budget alert on OpenRouter if available
 - Track tokens consumed per pipeline run (the LLM response includes usage metadata)
+- Now also includes the Railway $5/mo Hobby fee — keep an eye on actual
+  resource usage in the Railway dashboard to confirm we're inside the
+  included credit and not bleeding past it.
 
 ---
 

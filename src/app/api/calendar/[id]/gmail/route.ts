@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getEventByIdFromDB, eventRowToItem } from '@/lib/db';
 import { loadEvents } from '@/lib/events';
 import { generateGmailUrl } from '@/lib/ics';
+import type { EventItem } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,6 +20,7 @@ export function OPTIONS() {
  * GET /api/calendar/[id]/gmail
  *
  * Returns a JSON object containing a Google Calendar "add event" URL.
+ * Reads from Postgres when DATABASE_URL is set; static JSON is a fallback.
  */
 export async function GET(
   _request: NextRequest,
@@ -27,8 +30,17 @@ export async function GET(
     const { id } = await params;
     const numericId = Number(id);
 
-    const events = loadEvents();
-    const event = events.find((e: any) => e.id === numericId || e.id === id);
+    let event: EventItem | undefined;
+
+    if (process.env.DATABASE_URL && Number.isFinite(numericId)) {
+      const row = await getEventByIdFromDB(numericId);
+      if (row) event = eventRowToItem(row);
+    }
+
+    if (!event) {
+      const events = loadEvents();
+      event = events.find((e) => e.id === numericId);
+    }
 
     if (!event) {
       return NextResponse.json(
@@ -37,7 +49,7 @@ export async function GET(
       );
     }
 
-    const gmail_url = generateGmailUrl(event as any);
+    const gmail_url = generateGmailUrl(event);
 
     return NextResponse.json({ gmail_url }, { headers: CORS_HEADERS });
   } catch (err) {

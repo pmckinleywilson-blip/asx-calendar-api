@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getEventByIdFromDB, eventRowToItem } from '@/lib/db';
 import { loadEvents } from '@/lib/events';
 import { generateSingleIcs } from '@/lib/ics';
+import type { EventItem } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,7 +19,8 @@ export function OPTIONS() {
 /**
  * GET /api/calendar/[id]
  *
- * Returns an .ics file for a single event.
+ * Returns an .ics file for a single event. Reads from Postgres when
+ * DATABASE_URL is set, with the static events.json file as a fallback.
  */
 export async function GET(
   _request: NextRequest,
@@ -27,8 +30,17 @@ export async function GET(
     const { id } = await params;
     const numericId = Number(id);
 
-    const events = loadEvents();
-    const event = events.find((e: any) => e.id === numericId || e.id === id);
+    let event: EventItem | undefined;
+
+    if (process.env.DATABASE_URL && Number.isFinite(numericId)) {
+      const row = await getEventByIdFromDB(numericId);
+      if (row) event = eventRowToItem(row);
+    }
+
+    if (!event) {
+      const events = loadEvents();
+      event = events.find((e) => e.id === numericId);
+    }
 
     if (!event) {
       return NextResponse.json(
@@ -37,11 +49,9 @@ export async function GET(
       );
     }
 
-    const ics = generateSingleIcs(event as any);
+    const ics = generateSingleIcs(event);
 
-    const ticker = (event as any).ticker ?? (event as any).companyCode ?? 'event';
-    const date = (event as any).event_date ?? (event as any).date ?? 'unknown';
-    const filename = `asx-${ticker}-${date}.ics`;
+    const filename = `asx-${event.ticker}-${event.event_date}.ics`;
 
     return new Response(ics, {
       status: 200,

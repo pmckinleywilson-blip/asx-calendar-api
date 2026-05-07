@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { loadEvents } from '@/lib/events';
 import { loadCompanies } from '@/lib/companies';
-import { getEventsFromDB } from '@/lib/db';
+import { getEventsFromDB, eventRowToItem } from '@/lib/db';
 import type { EventItem } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -78,31 +78,10 @@ export async function GET(request: NextRequest) {
           }
         }
 
-        // Map DB rows to EventItem shape
-        const events = dbEvents.map((row: any) => ({
-          id: row.id,
-          ticker: row.ticker,
-          company_name: row.company_name,
-          event_type: row.event_type,
-          event_date: typeof row.event_date === 'string'
-            ? row.event_date.substring(0, 10)
-            : new Date(row.event_date).toISOString().substring(0, 10),
-          event_time: row.event_time,
-          timezone: row.timezone ?? 'Australia/Sydney',
-          title: row.title,
-          description: row.description,
-          webcast_url: row.webcast_url,
-          phone_number: row.phone_number,
-          phone_passcode: row.phone_passcode,
-          replay_url: row.replay_url,
-          fiscal_period: row.fiscal_period,
-          source: row.source,
-          source_url: row.source_url,
-          ir_verified: row.ir_verified,
-          status: row.status,
+        // Map DB rows to EventItem shape, then attach human-readable status_label
+        const events = dbEvents.map((row) => ({
+          ...eventRowToItem(row),
           status_label: statusLabel(row.status),
-          created_at: row.created_at,
-          updated_at: row.updated_at,
         }));
 
         const total = index || sector ? events.length : dbResult.total;

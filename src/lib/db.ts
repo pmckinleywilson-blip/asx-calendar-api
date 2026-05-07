@@ -3,6 +3,7 @@
 // ============================================================
 
 import { neon } from '@neondatabase/serverless';
+import type { EventItem } from './types';
 
 // ---------------------------------------------------------------------------
 // Connection
@@ -631,6 +632,60 @@ export async function markEventNotified(eventId: number): Promise<void> {
   await sql`
     UPDATE events SET notified_at = NOW() WHERE id = ${eventId}
   `;
+}
+
+/**
+ * Fetch events by a list of IDs. Used by the bulk-ICS endpoint where the
+ * client has explicit event IDs in mind — no date filter is applied so that
+ * a deliberately-requested event is always returned.
+ */
+export async function getEventsByIdsFromDB(
+  ids: number[],
+): Promise<EventRow[]> {
+  const sql = getSQL();
+  if (!sql || ids.length === 0) return [];
+
+  const rows = await sql`
+    SELECT * FROM events
+    WHERE id = ANY(${ids})
+    ORDER BY event_date ASC, event_time ASC NULLS LAST
+  `;
+
+  return rows as EventRow[];
+}
+
+/**
+ * Map a raw DB EventRow to the public-facing EventItem shape used by
+ * the frontend, ICS generator, and email templates. Centralised here so
+ * the date/timezone normalisation lives in one place.
+ */
+export function eventRowToItem(row: EventRow): EventItem {
+  const eventDate = typeof row.event_date === 'string'
+    ? row.event_date.substring(0, 10)
+    : new Date(row.event_date as unknown as string).toISOString().substring(0, 10);
+
+  return {
+    id: row.id,
+    ticker: row.ticker,
+    company_name: row.company_name,
+    event_type: row.event_type as EventItem['event_type'],
+    event_date: eventDate,
+    event_time: row.event_time,
+    timezone: row.timezone ?? 'Australia/Sydney',
+    title: row.title,
+    description: row.description,
+    webcast_url: row.webcast_url,
+    phone_number: row.phone_number,
+    phone_passcode: row.phone_passcode,
+    replay_url: row.replay_url,
+    fiscal_period: row.fiscal_period,
+    source: row.source,
+    source_url: row.source_url,
+    ir_verified: row.ir_verified,
+    status: row.status as EventItem['status'],
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
 }
 
 /**

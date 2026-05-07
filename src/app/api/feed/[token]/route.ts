@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSubscriptionByToken } from '@/lib/db';
+import {
+  getSubscriptionByToken,
+  getEventsByTickers,
+  eventRowToItem,
+} from '@/lib/db';
 import { loadEvents } from '@/lib/events';
 import { generateBulkIcs } from '@/lib/ics';
 import type { EventItem } from '@/lib/types';
@@ -11,6 +15,11 @@ export const dynamic = 'force-dynamic';
  *
  * Serves a subscribable ICS calendar feed for the given subscription.
  * Calendar clients can poll this URL to stay in sync.
+ *
+ * Reads from Postgres when DATABASE_URL is set so subscribers always see
+ * the latest events. Falls back to the static events.json file otherwise.
+ * Past events are excluded — getEventsByTickers already filters to
+ * event_date >= CURRENT_DATE.
  */
 export async function GET(
   _request: NextRequest,
@@ -52,12 +61,22 @@ export async function GET(
     });
   }
 
-  // Load events matching any of the subscriber's tickers
-  const allEvents = loadEvents();
-  const tickerSet = new Set(tickers.map((t) => t.toUpperCase()));
-  const matched: EventItem[] = allEvents.filter((e) =>
-    tickerSet.has(e.ticker.toUpperCase()),
-  );
+  const upperTickers = tickers.map((t) => t.toUpperCase());
+
+  // Resolve events for the subscriber's tickers — DB first, static fallback.
+  let matched: EventItem[] = [];
+
+  if (process.env.DATABASE_URL) {
+    const rows = await getEventsByTickers(upperTickers);
+    matched = rows.map(eventRowToItem);
+  } else {
+    const allEvents = loadEvents();
+    const tickerSet = new Set(upperTickers);
+    const today = new Date().toISOString().substring(0, 10);
+    matched = allEvents.filter(
+      (e) => tickerSet.has(e.ticker.toUpperCase()) && e.event_date >= today,
+    );
+  }
 
   // Generate ICS with refresh interval hints
   let ics: string;
